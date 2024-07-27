@@ -94,9 +94,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 end
 
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
-	print("in make_ollama_spec_curl_args")
 	local url = opts.url
-	print("%s", url)
 	local data = {
 		prompt = prompt,
 		system = system_prompt,
@@ -104,6 +102,7 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 		stream = true,
 	}
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
+	print(args)
 	table.insert(args, url)
 	return args
 end
@@ -184,6 +183,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	local prompt = get_prompt(opts)
 	local system_prompt = opts.system_prompt
 		or "You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly"
+	print(prompt)
 	local args = make_curl_args_fn(opts, prompt, system_prompt)
 	local curr_event_state = nil
 
