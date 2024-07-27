@@ -109,7 +109,7 @@ local function print_table(t, indent)
 end
 
 local state = {
-	context = ""
+	context = "",
 }
 
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
@@ -120,7 +120,6 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 		model = opts.model,
 		stream = true,
 	}
-	if context
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	table.insert(args, url)
 	return args
@@ -191,8 +190,8 @@ function M.handle_ollama_spec_data(data_stream)
 		if content then
 			write_string_at_cursor(content)
 		end
-	if json.done then
-		print(json.context)
+		if json.done then
+			print(json.context)
 		end
 	end
 end
