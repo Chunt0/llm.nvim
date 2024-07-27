@@ -191,7 +191,7 @@ function M.handle_ollama_spec_data(data_stream)
 			write_string_at_cursor(content)
 		end
 	elseif json.done then
-		print(json.context)
+		print_table(json.context)
 	end
 end
 
