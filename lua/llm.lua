@@ -203,16 +203,14 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	local curr_event_state = nil
 
 	local function parse_and_call(line)
-		print("parse and call")
+		print(line)
 		local event = line:match("^event: (.+)$")
 		if event then
-			print("event")
 			curr_event_state = event
 			return
 		end
 		local data_match = line:match("^data: (.+)$")
 		if data_match then
-			print("data")
 			handle_data_fn(data_match, curr_event_state)
 		end
 	end
