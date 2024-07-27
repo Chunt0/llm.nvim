@@ -93,6 +93,21 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	return args
 end
 
+local function print_table(t, indent)
+	if not indent then
+		indent = 0
+	end
+	for k, v in pairs(t) do
+		formatting = string.rep("  ", indent) .. k .. ": "
+		if type(v) == "table" then
+			print(formatting)
+			print_table(v, indent + 1)
+		else
+			print(formatting .. tostring(v))
+		end
+	end
+end
+
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 	local url = opts.url
 	local data = {
@@ -102,7 +117,7 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 		stream = true,
 	}
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
-	print(data)
+	print_table(data)
 	table.insert(args, url)
 	return args
 end
