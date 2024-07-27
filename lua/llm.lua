@@ -98,7 +98,7 @@ local function print_table(t, indent)
 		indent = 0
 	end
 	for k, v in pairs(t) do
-		formatting = string.rep("  ", indent) .. k .. ": "
+		local formatting = string.rep("  ", indent) .. k .. ": "
 		if type(v) == "table" then
 			print(formatting)
 			print_table(v, indent + 1)
@@ -117,7 +117,6 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 		stream = true,
 	}
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
-	print_table(args)
 	table.insert(args, url)
 	return args
 end
@@ -200,6 +199,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 		or "You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly"
 	local args = make_curl_args_fn(opts, prompt, system_prompt)
 	local curr_event_state = nil
+	print_table(args)
 
 	local function parse_and_call(line)
 		local event = line:match("^event: (.+)$")
