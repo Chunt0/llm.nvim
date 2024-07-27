@@ -181,6 +181,7 @@ end
 
 function M.handle_ollama_spec_data(data_stream)
 	local json = vim.json.decode(data_stream)
+	print_table(json)
 	if json.response and json.done == false then
 		local content = json.response
 		if content then
