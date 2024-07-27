@@ -94,6 +94,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 end
 
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
+	print("in make_ollama_spec_curl_args")
 	local url = opts.url
 	local data = {
 		prompt = prompt,
