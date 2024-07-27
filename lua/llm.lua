@@ -201,7 +201,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 		or "You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly"
 	local args = make_curl_args_fn(opts, prompt, system_prompt)
 	local curr_event_state = nil
-	print_table(args)
 
 	local function parse_and_call(line)
 		local event = line:match("^event: (.+)$")
@@ -211,7 +210,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 		end
 		local data_match = line:match("^data: (.+)$")
 		if data_match then
-			print("parse and call")
 			handle_data_fn(data_match, curr_event_state)
 		end
 	end
