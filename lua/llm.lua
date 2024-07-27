@@ -100,7 +100,6 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 		prompt = prompt,
 		system = system_prompt,
 		model = opts.model,
-		temperature = 0.7,
 		stream = true,
 	}
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
