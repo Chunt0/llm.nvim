@@ -1,4 +1,4 @@
-ocal M = {}
+local M = {}
 local Job = require("plenary.job")
 
 local function get_api_key(name)
