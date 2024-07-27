@@ -204,7 +204,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	print_table(args)
 
 	local function parse_and_call(line)
-		print("parse and call")
 		local event = line:match("^event: (.+)$")
 		if event then
 			curr_event_state = event
@@ -212,6 +211,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 		end
 		local data_match = line:match("^data: (.+)$")
 		if data_match then
+			print("parse and call")
 			handle_data_fn(data_match, curr_event_state)
 		end
 	end
