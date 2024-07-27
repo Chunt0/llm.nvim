@@ -109,7 +109,7 @@ local function print_table(t, indent)
 end
 
 local state = {
-	context = "",
+	context = {},
 }
 
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
@@ -191,7 +191,8 @@ function M.handle_ollama_spec_data(data_stream)
 			write_string_at_cursor(content)
 		end
 	elseif json.done then
-		print_table(json.context)
+		table.insert(state.context, json.context)
+		print_table(state.context)
 	end
 end
 
