@@ -1,4 +1,4 @@
-local M = {}
+ocal M = {}
 local Job = require("plenary.job")
 
 local function get_api_key(name)
@@ -180,6 +180,7 @@ function M.handle_openai_spec_data(data_stream)
 end
 
 function M.handle_ollama_spec_data(data_stream)
+	print("handling spec data")
 	local json = vim.json.decode(data_stream)
 	print_table(json)
 	if json.response and json.done == false then
