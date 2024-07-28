@@ -216,8 +216,8 @@ function M.handle_ollama_spec_data(data_stream)
 		for _, value in ipairs(json.context) do
 			if value and state.context then
 				table.insert(state.context, tonumber(value))
-				print(#state.context)
 			end
+			print(#state.context)
 		end
 	end
 end
