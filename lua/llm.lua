@@ -111,6 +111,7 @@ end
 local function trim_context(context, max_length)
 	local len = #context
 	if len >= max_length then
+		print("trimming context")
 		-- Calculate the number of elements to remove
 		local remove_count = len - max_length
 		-- Remove the first `remove_count` elements from the context
