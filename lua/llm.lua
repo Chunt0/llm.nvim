@@ -222,10 +222,8 @@ function M.handle_openai_spec_data(data_stream)
 end
 
 function M.handle_groq_spec_data(data_stream)
-	print("in handle groq spec data")
-	print(type(data_stream))
 	if data_stream:match('"delta":') then
-		print_table(data_stream)
+		print(data_stream)
 		local json = vim.json.decode(data_stream)
 		if json.choices and json.choices[1] and json.choices[1].delta then
 			local content = json.choices[1].delta.content
