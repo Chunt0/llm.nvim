@@ -110,9 +110,10 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	print("in openai spec curl args")
 	local url = opts.url
 	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+	local data = nil
 	if openai_count == 0 then
 		local message = { { role = "system", content = system_prompt }, { role = "user", content = prompt } }
-		local data = {
+		data = {
 			messages = message,
 			model = opts.model,
 			temperature = 0.7,
@@ -125,7 +126,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	elseif openai_count == 1 then
 		local next_message = { role = "user", content = prompt }
 		table.insert(openai_messages, next_message)
-		local data = {
+		data = {
 			messages = openai_messages,
 			model = opts.model,
 			temperature = 0.7,
