@@ -222,7 +222,7 @@ end
 
 function M.handle_groq_spec_data(data_stream)
 	print("in handle groq spec data")
-	print("data_stream")
+	print(data_stream)
 	if data_stream:match('"delta":') then
 		local json = vim.json.decode(data_stream)
 		if json.choices and json.choices[1] and json.choices[1].delta then
