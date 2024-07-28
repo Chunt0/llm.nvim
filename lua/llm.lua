@@ -118,6 +118,7 @@ local function trim_context(context, max_length)
 		for _ = 1, remove_count do
 			table.remove(context, 1)
 		end
+		return context
 	end
 end
 
@@ -199,7 +200,7 @@ function M.handle_openai_spec_data(data_stream)
 	end
 end
 
-local max_length = 30000
+local max_length = 131072
 
 function M.handle_ollama_spec_data(data_stream)
 	local json = vim.json.decode(data_stream)
@@ -212,8 +213,8 @@ function M.handle_ollama_spec_data(data_stream)
 		for _, value in ipairs(json.context) do
 			table.insert(state.context, tonumber(value))
 		end
-		trim_context(state.context, max_length)
-		print_table(state.context)
+		local context = state.context
+		state.context = trim_context(context, max_length)
 	end
 end
 
