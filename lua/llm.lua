@@ -198,7 +198,7 @@ function M.handle_openai_spec_data(data_stream)
 	end
 end
 
-local max_length = 32768
+local max_length = 32767
 
 function M.handle_ollama_spec_data(data_stream)
 	local json = vim.json.decode(data_stream)
