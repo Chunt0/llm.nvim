@@ -236,6 +236,7 @@ function M.handle_openai_spec_data(data_stream)
 	print("in handle openai spec data")
 	print(data_stream)
 	if data_stream:match('"delta":') then
+		data_stream = data_stream:gsub("^data: ", "")
 		local json = vim.json.decode(data_stream)
 		if json.choices and json.choices[1] and json.choices[1].delta then
 			local content = json.choices[1].delta.content
