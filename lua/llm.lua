@@ -134,7 +134,6 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 	}
 	if opts.context then
 		context = trim_context(context, max_length)
-		print_table(context)
 		data.context = context
 	end
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
