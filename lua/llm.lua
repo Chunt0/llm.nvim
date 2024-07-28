@@ -218,8 +218,6 @@ function M.handle_ollama_spec_data(data_stream)
 				table.insert(state.context, tonumber(value))
 			end
 		end
-		print(type(state.context))
-		state.context = trim_context(state.context, max_length)
 	end
 end
 
