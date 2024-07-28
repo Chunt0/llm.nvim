@@ -122,7 +122,7 @@ local function trim_context(context, max_length)
 end
 
 local context = {}
-local max_length = 20000
+local max_length = 30000
 
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 	local url = opts.url
