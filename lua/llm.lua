@@ -135,6 +135,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	end
 
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
+	print_table(args)
 	if api_key then
 		table.insert(args, "-H")
 		table.insert(args, "Authorization: Bearer " .. api_key)
