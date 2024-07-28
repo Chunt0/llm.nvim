@@ -103,16 +103,36 @@ function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
 	return args
 end
 
+local openai_messages = {}
+local openai_count = 0
+
 function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	print("in openai spec curl args")
 	local url = opts.url
 	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
-	local data = {
-		messages = { { role = "system", content = system_prompt }, { role = "user", content = prompt } },
-		model = opts.model,
-		temperature = 0.7,
-		stream = true,
-	}
+	if openai_count == 0 then
+		local message = { { role = "system", content = system_prompt }, { role = "user", content = prompt } }
+		local data = {
+			messages = message,
+			model = opts.model,
+			temperature = 0.7,
+			stream = true,
+		}
+		for _, v in pairs(message) do
+			table.insert(openai_messages, v)
+		end
+		openai_count = 1
+	elseif openai_count == 1 then
+		local next_message = { role = "user", content = prompt }
+		table.insert(openai_messages, next_message)
+		local data = {
+			messages = openai_messages,
+			model = opts.model,
+			temperature = 0.7,
+			stream = true,
+		}
+	end
+
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	if api_key then
 		table.insert(args, "-H")
@@ -126,7 +146,6 @@ function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
 	print("in groq spec curl args")
 	local url = opts.url
 	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
-	print(api_key)
 	local data = {
 		messages = { { role = "system", content = system_prompt }, { role = "user", content = prompt } },
 		model = opts.model,
@@ -209,6 +228,8 @@ function M.handle_anthropic_spec_data(data_stream, event_state)
 	end
 end
 
+local assistant_response = ""
+
 function M.handle_openai_spec_data(data_stream)
 	if data_stream:match('"delta":') then
 		local json = vim.json.decode(data_stream)
@@ -216,8 +237,13 @@ function M.handle_openai_spec_data(data_stream)
 			local content = json.choices[1].delta.content
 			if content then
 				write_string_at_cursor(content)
+				assistant_response = assistant_response .. content
 			end
 		end
+	elseif data_stream:match("[DONE]") then
+		local assistant_message = { role = "assistant", content = assistant_response }
+		table.insert(openai_messages, assistant_message)
+		assistant_response = ""
 	end
 end
 
