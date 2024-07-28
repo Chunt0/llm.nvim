@@ -126,6 +126,7 @@ function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
 	print("in groq spec curl args")
 	local url = opts.url
 	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+	print(api_key)
 	local data = {
 		messages = { { role = "system", content = system_prompt }, { role = "user", content = prompt } },
 		model = opts.model,
