@@ -110,11 +110,11 @@ end
 
 local function trim_context(context, max_length)
 	local len = #context
-	if len > max_length then
+	if len >= max_length then
 		-- Calculate the number of elements to remove
 		local remove_count = len - max_length
 		-- Remove the first `remove_count` elements from the context
-		for i = 1, remove_count do
+		for _ = 1, remove_count do
 			table.remove(context, 1)
 		end
 	end
@@ -198,7 +198,7 @@ function M.handle_openai_spec_data(data_stream)
 	end
 end
 
-local max_length = 32000
+local max_length = 30000
 
 function M.handle_ollama_spec_data(data_stream)
 	local json = vim.json.decode(data_stream)
