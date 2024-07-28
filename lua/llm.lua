@@ -109,14 +109,11 @@ local function print_table(t, indent)
 end
 
 local function trim_context(context, max_length)
-	if context == nil then
-		local context = {}
-	end
 	local len = #context
 	if len >= max_length then
 		print("trimming context")
 		-- Calculate the number of elements to remove
-		local remove_count = len - max_length
+		local remove_count = len - (max_length + 1)
 		-- Remove the first `remove_count` elements from the context
 		for _ = 1, remove_count do
 			table.remove(context, 1)
@@ -125,10 +122,7 @@ local function trim_context(context, max_length)
 	end
 end
 
-local state = {
-	context = {},
-}
-
+local context = {}
 local max_length = 131072
 
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
@@ -140,7 +134,7 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 		stream = true,
 	}
 	if opts.context then
-		data.context = trim_context(state.context, max_length)
+		data.context = trim_context(context, max_length)
 	end
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	table.insert(args, url)
@@ -214,11 +208,11 @@ function M.handle_ollama_spec_data(data_stream)
 		end
 	elseif json.done then
 		for _, value in ipairs(json.context) do
-			if value and state.context then
-				table.insert(state.context, tonumber(value))
+			if value and context then
+				table.insert(context, tonumber(value))
 			end
 		end
-		print(#state.context)
+		print(#context)
 	end
 end
 
