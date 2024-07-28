@@ -129,6 +129,8 @@ local state = {
 	context = {},
 }
 
+local max_length = 131072
+
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 	local url = opts.url
 	local data = {
@@ -138,7 +140,7 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 		stream = true,
 	}
 	if opts.context then
-		data.context = state.context
+		data.context = trim_context(state.context, max_length)
 	end
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	table.insert(args, url)
@@ -203,8 +205,6 @@ function M.handle_openai_spec_data(data_stream)
 	end
 end
 
-local max_length = 131072
-
 function M.handle_ollama_spec_data(data_stream)
 	local json = vim.json.decode(data_stream)
 	if json.response and json.done == false then
@@ -212,13 +212,13 @@ function M.handle_ollama_spec_data(data_stream)
 		if content then
 			write_string_at_cursor(content)
 		end
-	elseif json.done and json.context then
+	elseif json.done then
 		for _, value in ipairs(json.context) do
 			if value and state.context then
 				table.insert(state.context, tonumber(value))
 			end
-			print(#state.context)
 		end
+		print(#state.context)
 	end
 end
 
