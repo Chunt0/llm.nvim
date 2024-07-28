@@ -93,15 +93,13 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	return args
 end
 
-local function print_table(t, indent)
-	if not indent then
-		indent = 0
-	end
+local function print_table(t)
+	local indent = 1
 	for k, v in pairs(t) do
 		local formatting = string.rep("  ", indent) .. k .. ": "
 		if type(v) == "table" then
 			print(formatting)
-			print_table(v, indent + 1)
+			print_table(v)
 		else
 			print(formatting .. tostring(v))
 		end
@@ -110,10 +108,10 @@ end
 
 local function trim_context(context, max_length)
 	local len = #context
-	if len >= max_length then
+	if len > max_length then
 		print("trimming context")
 		-- Calculate the number of elements to remove
-		local remove_count = len - (max_length + 1)
+		local remove_count = len - max_length
 		-- Remove the first `remove_count` elements from the context
 		for _ = 1, remove_count do
 			table.remove(context, 1)
