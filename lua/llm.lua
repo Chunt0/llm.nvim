@@ -5,6 +5,34 @@ local function get_api_key(name)
 	return os.getenv(name)
 end
 
+local function print_table(t)
+	local indent = 1
+	for k, v in pairs(t) do
+		local formatting = string.rep("  ", indent) .. k .. ": "
+		if type(v) == "table" then
+			print(formatting)
+			print_table(v)
+		else
+			print(formatting .. tostring(v))
+		end
+	end
+end
+
+local function trim_context(context, max_length)
+	local len = #context
+	if len > max_length then
+		print("trimming context")
+		-- Calculate the number of elements to remove
+		local remove_count = len - max_length
+		-- Remove the first `remove_count` elements from the context
+		for _ = 1, remove_count do
+			table.remove(context, 1)
+		end
+		return context
+	end
+	return context
+end
+
 function M.get_lines_until_cursor()
 	local current_buffer = vim.api.nvim_get_current_buf()
 	local current_window = vim.api.nvim_get_current_win()
@@ -94,32 +122,23 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	return args
 end
 
-local function print_table(t)
-	local indent = 1
-	for k, v in pairs(t) do
-		local formatting = string.rep("  ", indent) .. k .. ": "
-		if type(v) == "table" then
-			print(formatting)
-			print_table(v)
-		else
-			print(formatting .. tostring(v))
-		end
+function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
+	print("in groq spec curl args")
+	local url = opts.url
+	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+	local data = {
+		messages = { { role = "system", content = system_prompt }, { role = "user", content = prompt } },
+		model = opts.model,
+		temperature = 0.7,
+		stream = true,
+	}
+	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
+	if api_key then
+		table.insert(args, "-H")
+		table.insert(args, "Authorization: Bearer " .. api_key)
 	end
-end
-
-local function trim_context(context, max_length)
-	local len = #context
-	if len > max_length then
-		print("trimming context")
-		-- Calculate the number of elements to remove
-		local remove_count = len - max_length
-		-- Remove the first `remove_count` elements from the context
-		for _ = 1, remove_count do
-			table.remove(context, 1)
-		end
-		return context
-	end
-	return context
+	table.insert(args, url)
+	return args
 end
 
 local context = {}
@@ -190,6 +209,18 @@ function M.handle_anthropic_spec_data(data_stream, event_state)
 end
 
 function M.handle_openai_spec_data(data_stream)
+	if data_stream:match('"delta":') then
+		local json = vim.json.decode(data_stream)
+		if json.choices and json.choices[1] and json.choices[1].delta then
+			local content = json.choices[1].delta.content
+			if content then
+				write_string_at_cursor(content)
+			end
+		end
+	end
+end
+
+function M.handle_groq_spec_data(data_stream)
 	if data_stream:match('"delta":') then
 		local json = vim.json.decode(data_stream)
 		if json.choices and json.choices[1] and json.choices[1].delta then
