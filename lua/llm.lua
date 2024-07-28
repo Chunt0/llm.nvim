@@ -223,7 +223,7 @@ end
 
 function M.handle_groq_spec_data(data_stream)
 	print("in handle groq spec data")
-	print(data_stream)
+	print(type(data_stream))
 	if data_stream:match('"delta":') then
 		local json = vim.json.decode(data_stream)
 		if json.choices and json.choices[1] and json.choices[1].delta then
@@ -260,7 +260,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	local system_prompt = opts.system_prompt
 		or "You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly"
 	local args = make_curl_args_fn(opts, prompt, system_prompt)
-	print_table(args)
 	--local curr_event_state = nil
 
 	--local function parse_and_call(line)
