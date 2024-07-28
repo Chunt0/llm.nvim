@@ -109,7 +109,8 @@ local function print_table(t, indent)
 end
 
 local function trim_context(context, max_length)
-	print("in trim context")
+	if ~context then
+		local context = {}
 	local len = #context
 	if len >= max_length then
 		print("trimming context")
