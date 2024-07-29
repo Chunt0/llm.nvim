@@ -115,12 +115,10 @@ function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
 	end
 
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
-	if api_key then
-		table.insert(args, "-H")
-		table.insert(args, "x-api-key: " .. api_key)
-		table.insert(args, "-H")
-		table.insert(args, "anthropic-version: 2023-06-01")
-	end
+	table.insert(args, "-H")
+	table.insert(args, "x-api-key: " .. api_key)
+	table.insert(args, "-H")
+	table.insert(args, "anthropic-version: 2023-06-01")
 	table.insert(args, url)
 	return args
 end
