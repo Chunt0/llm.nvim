@@ -351,6 +351,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 				active_job = nil
 			end,
 		})
+		print(curr_event_state)
 	else
 		active_job = Job:new({
 			command = "curl",
