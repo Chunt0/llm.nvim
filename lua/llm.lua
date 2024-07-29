@@ -83,6 +83,7 @@ function M.get_visual_selection()
 end
 
 function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
+	print("in make anthropic spec curl args")
 	local url = opts.url
 	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
 	local data = {
