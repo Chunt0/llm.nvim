@@ -24,7 +24,7 @@ function M.code()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OLLAMA_URL,
 		model = OLLAMA_MODEL_CODE,
-		system_prompt = prompts.system_prompt,
+		system_prompt = prompts.code_prompt,
 		replace = true,
 		context = false,
 		framework = FRAMEWORK,

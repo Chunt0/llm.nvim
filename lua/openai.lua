@@ -13,7 +13,7 @@ function M.code()
 		url = OPENAI_URL,
 		model = OPENAI_MODEL,
 		api_key_name = OPENAI_API_KEY_NAME,
-		system_prompt = prompts.system_prompt,
+		system_prompt = prompts.code_prompt,
 		replace = true,
 		framework = FRAMEWORK,
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
