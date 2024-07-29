@@ -8,7 +8,7 @@ local FRAMEWORK = "OPENAI"
 
 local M = {}
 
-function M.openai_code()
+function M.code()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OPENAI_URL,
 		model = OPENAI_MODEL,
@@ -19,7 +19,7 @@ function M.openai_code()
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
 end
 
-function M.openai_help()
+function M.help()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OPENAI_URL,
 		model = OPENAI_MODEL,
@@ -30,7 +30,7 @@ function M.openai_help()
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
 end
 
-function M.openai_en2ch()
+function M.en2ch()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OPENAI_URL,
 		model = OPENAI_MODEL,
@@ -40,7 +40,7 @@ function M.openai_en2ch()
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
 end
 
-function M.openai_en2ar()
+function M.en2ar()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OPENAI_URL,
 		model = OPENAI_MODEL,
