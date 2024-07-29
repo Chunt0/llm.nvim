@@ -249,7 +249,7 @@ function M.handle_anthropic_spec_data(data_stream)
 	print("in handle anthropic spec data")
 	print(data_stream)
 	local json = vim.json.decode(data_stream)
-	if data_strem:match("content_block_delta") then
+	if data_stream:match("content_block_delta") then
 		if json.delta and json.delta.text then
 			local content = json.delta.text
 			write_string_at_cursor(content)
