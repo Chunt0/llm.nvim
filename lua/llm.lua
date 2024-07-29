@@ -237,17 +237,17 @@ end
 
 local anthropic_assistant_response = ""
 
-function M.handle_anthropic_spec_data(data_stream)
+function M.handle_anthropic_spec_data(data_stream, event_state)
 	print("in handle anthropic spec data")
 	print(data_stream)
 	local json = vim.json.decode(data_stream)
-	if data_stream:match("event: content_block_delta") then
+	if event_state == "content_block_delta" then
 		if json.delta and json.delta.text then
 			local content = json.delta.text
 			write_string_at_cursor(content)
 			anthropic_assistant_response = anthropic_assistant_response .. content
 		end
-	elseif data_stream:match("event: message_stop") then
+	elseif event_state == "message_stop" then
 		local assistant_message = { role = "assistant", content = anthropic_assistant_response }
 		table.insert(anthropic_messages, assistant_message)
 		anthropic_assistant_response = ""
@@ -309,6 +309,7 @@ local active_job = nil
 function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
 	vim.api.nvim_clear_autocmds({ group = group })
 	local prompt = get_prompt(opts)
+	local framework = opts.framework
 	local system_prompt = opts.system_prompt
 		or "You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly"
 	local args = make_curl_args_fn(opts, prompt, system_prompt)
@@ -318,19 +319,51 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 		active_job = nil
 	end
 
-	active_job = Job:new({
-		command = "curl",
-		args = args,
-		on_stdout = function(_, out)
-			print(out)
-			handle_data_fn(out)
-		end,
-		on_stderr = function(_, _) end,
-		on_exit = function()
-			active_job = nil
-		end,
-	})
+	if framework:match("ANTHROPIC") then
+		local curr_event_state = nil
 
+		local function parse_and_call(line)
+			local event = line:match("^event: (.+)$")
+			if event then
+				curr_event_state = event
+				return
+			end
+			local data_match = line:match("^data: (.+)$")
+			if data_match then
+				handle_data_fn(data_match, curr_event_state)
+			end
+		end
+
+		if active_job then
+			active_job:shutdown()
+			active_job = nil
+		end
+
+		active_job = Job:new({
+			command = "curl",
+			args = args,
+			on_stdout = function(_, out)
+				parse_and_call(out)
+			end,
+			on_stderr = function(_, _) end,
+			on_exit = function()
+				active_job = nil
+			end,
+		})
+	else
+		active_job = Job:new({
+			command = "curl",
+			args = args,
+			on_stdout = function(_, out)
+				print(out)
+				handle_data_fn(out)
+			end,
+			on_stderr = function(_, _) end,
+			on_exit = function()
+				active_job = nil
+			end,
+		})
+	end
 	print_table(args)
 	active_job:start()
 
