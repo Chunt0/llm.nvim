@@ -82,17 +82,38 @@ function M.get_visual_selection()
 	end
 end
 
+local anthropic_messages = {}
+local anthropic_count = 0
+
 function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
 	print("in make anthropic spec curl args")
 	local url = opts.url
 	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
-	local data = {
-		system = system_prompt,
-		messages = { { role = "user", content = prompt } },
-		model = opts.model,
-		stream = true,
-		max_tokens = 4096,
-	}
+
+	local data = nil
+	if anthropic_count == 0 then
+		local message = { { role = "system", content = system_prompt }, { role = "user", content = prompt } }
+		data = {
+			messages = message,
+			model = opts.model,
+			max_tokens = 1024,
+			stream = true,
+		}
+		for _, v in pairs(message) do
+			table.insert(anthropic_messages, v)
+		end
+		anthropic_count = 1
+	elseif anthropic_count == 1 then
+		local next_message = { role = "user", content = prompt }
+		table.insert(anthropic_messages, next_message)
+		data = {
+			messages = anthropic_messages,
+			model = opts.model,
+			max_tokens = 1024,
+			stream = true,
+		}
+	end
+
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	if api_key then
 		table.insert(args, "-H")
@@ -222,20 +243,28 @@ local function get_prompt(opts)
 	return prompt
 end
 
-function M.handle_anthropic_spec_data(data_stream, event_state)
-	if event_state == "content_block_delta" then
-		local json = vim.json.decode(data_stream)
+local anthropic_assistant_response = ""
+
+function M.handle_anthropic_spec_data(data_stream)
+	print("in handle anthropic spec data")
+	print(data_stream)
+	local json = vim.json.decode(data_stream)
+	if data_strem:match("content_block_delta") then
 		if json.delta and json.delta.text then
-			write_string_at_cursor(json.delta.text)
+			local content = json.delta.text
+			write_string_at_cursor(content)
+			anthropic_assistant_response = anthropic_assistant_response .. content
 		end
+	elseif data_stream:match("message_stop") then
+		local assistant_message = { role = "assistant", content = anthropic_assistant_response }
+		table.insert(anthropic_messages, assistant_message)
+		anthropic_assistant_response = ""
 	end
 end
 
-local assistant_response = ""
+local openai_assistant_response = ""
 
 function M.handle_openai_spec_data(data_stream)
-	print("in handle openai spec data")
-	print(data_stream)
 	if data_stream:match('"delta":') then
 		data_stream = data_stream:gsub("^data: ", "")
 		local json = vim.json.decode(data_stream)
@@ -243,13 +272,13 @@ function M.handle_openai_spec_data(data_stream)
 			local content = json.choices[1].delta.content
 			if content then
 				write_string_at_cursor(content)
-				assistant_response = assistant_response .. content
+				openai_assistant_response = openai_assistant_response .. content
 			end
 		end
 	elseif data_stream:match("[DONE]") then
-		local assistant_message = { role = "assistant", content = assistant_response }
+		local assistant_message = { role = "assistant", content = openai_assistant_response }
 		table.insert(openai_messages, assistant_message)
-		assistant_response = ""
+		openai_assistant_response = ""
 	end
 end
 
