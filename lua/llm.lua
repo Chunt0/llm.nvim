@@ -315,6 +315,27 @@ function M.handle_openai_spec_data(data_stream)
 	end
 end
 
+local groq_assistant_response = ""
+
+function M.handle_groq_spec_data(data_stream)
+	if data_stream:match('"delta":') then
+		data_stream = data_stream:gsub("^data: ", "")
+		local json = vim.json.decode(data_stream)
+		if json.choices and json.choices[1] and json.choices[1].delta then
+			local content = json.choices[1].delta.content
+			if content then
+				write_string_at_cursor(content)
+				groq_assistant_response = groq_assistant_response .. content
+			end
+		end
+	elseif data_stream:match("[DONE]") then
+		local assistant_message = { role = "assistant", content = groq_assistant_response }
+		table.insert(groq_messages, assistant_message)
+		groq_assistant_response = ""
+	end
+end
+
+--[[
 function M.handle_groq_spec_data(data_stream)
 	if data_stream:match('"delta":') then
 		data_stream = data_stream:gsub("^data: ", "")
@@ -327,6 +348,7 @@ function M.handle_groq_spec_data(data_stream)
 		end
 	end
 end
+]]
 
 function M.handle_ollama_spec_data(data_stream)
 	local json = vim.json.decode(data_stream)
