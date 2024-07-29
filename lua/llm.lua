@@ -331,9 +331,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 		on_stdout = function(_, out)
 			handle_data_fn(out)
 		end,
-		on_stderr = function(_, out)
-			print(out)
-		end,
+		on_stderr = function(_, _) end,
 		on_exit = function()
 			active_job = nil
 		end,
