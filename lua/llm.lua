@@ -331,6 +331,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 		end,
 	})
 
+	print_table(args)
 	active_job:start()
 
 	vim.api.nvim_create_autocmd("User", {
