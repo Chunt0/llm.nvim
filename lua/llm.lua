@@ -86,10 +86,8 @@ local anthropic_messages = {}
 local anthropic_count = 0
 
 function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
-	print("in make anthropic spec curl args")
 	local url = opts.url
 	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
-
 	local data = nil
 	if anthropic_count == 0 then
 		local message = { { role = "system", content = system_prompt }, { role = "user", content = prompt } }
@@ -127,7 +125,6 @@ local openai_messages = {}
 local openai_count = 0
 
 function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
-	print("in openai spec curl args")
 	local url = opts.url
 	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
 	local data = nil
@@ -165,7 +162,6 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 end
 
 function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
-	print("in groq spec curl args")
 	local url = opts.url
 	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
 	local data = {
@@ -196,7 +192,6 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 	}
 	if opts.context then
 		context = trim_context(context, max_length)
-		print(#context)
 		data.context = context
 	end
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
@@ -324,11 +319,11 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 		active_job = nil
 	end
 
-	print_table(args)
 	active_job = Job:new({
 		command = "curl",
 		args = args,
 		on_stdout = function(_, out)
+			print(out)
 			handle_data_fn(out)
 		end,
 		on_stderr = function(_, _) end,
