@@ -112,7 +112,7 @@ function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
 		}
 	end
 
-	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
+	local args = { "-N", "-X", "POST", "-H", "content-type: application/json", "-d", vim.json.encode(data) }
 	table.insert(args, "-H")
 	table.insert(args, "x-api-key: " .. api_key)
 	table.insert(args, "-H")
