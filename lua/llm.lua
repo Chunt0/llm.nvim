@@ -207,7 +207,7 @@ local function write_string_at_cursor(str)
 		local lines = vim.split(str, "\n")
 
 		vim.cmd("undojoin")
-		vim.api.nvim_put(lines, "l", true, true)
+		vim.api.nvim_put(lines, "b", true, true)
 
 		local num_lines = #lines
 		local last_line_length = #lines[num_lines]
