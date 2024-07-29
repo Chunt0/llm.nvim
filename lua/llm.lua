@@ -283,7 +283,6 @@ end
 function M.handle_groq_spec_data(data_stream)
 	if data_stream:match('"delta":') then
 		data_stream = data_stream:gsub("^data: ", "")
-		print(data_stream)
 		local json = vim.json.decode(data_stream)
 		if json.choices and json.choices[1] and json.choices[1].delta then
 			local content = json.choices[1].delta.content
@@ -319,21 +318,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	local system_prompt = opts.system_prompt
 		or "You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly"
 	local args = make_curl_args_fn(opts, prompt, system_prompt)
-	print_table(args)
-	--local curr_event_state = nil
-
-	--local function parse_and_call(line)
-	--local event = line:match("^event: (.+)$")
-	--if event then
-	--	curr_event_state = event
-	--	return
-	--end
-	--local response = line:match("^data: (.+)$")
-	--if data_match then
-	--	handle_data_fn(data_match, curr_event_state)
-	--end
-
-	--end
 
 	if active_job then
 		active_job:shutdown()
