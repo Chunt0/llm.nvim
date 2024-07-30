@@ -249,7 +249,10 @@ local function get_prompt(opts)
 		if replace then
 			vim.api.nvim_command("normal! d")
 		else
-			vim.api.nvim_command("normal! o")
+			local bufnr = vim.api.nvim_get_current_buf()
+			local line, col = unpack(vim.api.nvim_win_get_cursor(0))
+			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "" })
+			vim.api.nvim_win_set_cursor(0, { line + 1, 0 })
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
 		end
 	else
