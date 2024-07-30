@@ -42,4 +42,15 @@ function M.en2ch()
 	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)
 end
 
+function M.ch2en()
+	llm.invoke_llm_and_stream_into_editor({
+		url = OLLAMA_URL,
+		model = OLLAMA_MODEL_EN2CH,
+		system_prompt = prompts.ch2en_prompt,
+		replace = false,
+		context = false,
+		framework = FRAMEWORK,
+	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)
+end
+
 return M
