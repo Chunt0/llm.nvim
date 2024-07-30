@@ -252,6 +252,7 @@ local function get_prompt(opts)
 			local bufnr = vim.api.nvim_get_current_buf()
 			local pos = vim.fn.getpos("'>")
 			local row = pos[2]
+			print(row)
 			vim.api.nvim_buf_set_lines(bufnr, row, row, false, { "" })
 			vim.api.nvim_win_set_cursor(0, { row + 1, 0 })
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
@@ -293,8 +294,6 @@ end
 local anthropic_assistant_response = ""
 
 function M.handle_anthropic_spec_data(data_stream, event_state)
-	print("in handle anthropic spec data")
-	print(data_stream)
 	local json = vim.json.decode(data_stream)
 	if event_state == "content_block_delta" then
 		if json.delta and json.delta.text then
@@ -384,7 +383,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	local curr_event_state = nil
 
 	local function parse_and_call(line)
-		print("in parse and call")
 		local event = line:match("^event: (.+)$")
 		if event then
 			curr_event_state = event
@@ -397,8 +395,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	end
 
 	if framework:match("ANTHROPIC") then
-		print("In anthropic framework match")
-		print_table(args)
 		active_job = Job:new({
 			command = "curl",
 			args = args,
