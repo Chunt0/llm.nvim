@@ -90,7 +90,7 @@ function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
 	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
 	local data = nil
 	if anthropic_count == 0 then
-		local message = { { role = "system", content = system_prompt }, { role = "user", content = prompt } }
+		local message = { { role = "user", content = prompt } }
 		data = {
 			messages = message,
 			model = opts.model,
