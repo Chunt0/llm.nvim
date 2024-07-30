@@ -252,7 +252,11 @@ local function get_prompt(opts)
 			local bufnr = vim.api.nvim_get_current_buf()
 			local pos = vim.fn.getpos("'>")
 			local row = pos[2]
-			vim.api.nvim_win_set_cursor(0, { row, 0 })
+			-- Ensure the row is within the bounds of the buffer
+			local line_count = vim.api.nvim_buf_line_count(bufnr)
+			if row > line_count then
+				row = line_count
+			end
 			vim.api.nvim_buf_set_lines(bufnr, row, row, false, { "" })
 			vim.api.nvim_win_set_cursor(0, { row + 1, 0 })
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
