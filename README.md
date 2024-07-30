@@ -19,14 +19,14 @@ return {
 			local anthropic = require("anthropic")
 			local ollama = require("ollama")
 
-			vim.keymap.set({ "n", "v" }, "<leader>J", ollama.ch2en, { desc = "llm ollama help" })
-			vim.keymap.set({ "n", "v" }, "<leader>j", ollama.en2ch, { desc = "llm ollama replace" })
-			vim.keymap.set({ "n", "v" }, "<leader>K", groq.help, { desc = "llm groq_help" })
-			vim.keymap.set({ "n", "v" }, "<leader>k", groq.code, { desc = "llm groq_help" })
-			vim.keymap.set({ "n", "v" }, "<leader>L", openai.help, { desc = "llm openai_help" })
-			vim.keymap.set({ "n", "v" }, "<leader>l", openai.code, { desc = "llm openai" })
-			vim.keymap.set({ "n", "v" }, "<leader>H", anthropic.help, { desc = "llm anthropic_help" })
-			vim.keymap.set({ "n", "v" }, "<leader>h", anthropic.code, { desc = "llm anthropic" })
+			vim.keymap.set({ "n", "v" }, "<leader>J", ollama.help, { desc = "llm ollama help" })
+			vim.keymap.set({ "n", "v" }, "<leader>j", ollama.code, { desc = "llm ollama code" })
+			vim.keymap.set({ "n", "v" }, "<leader>K", groq.help, { desc = "llm groq help" })
+			vim.keymap.set({ "n", "v" }, "<leader>k", groq.code, { desc = "llm groq code" })
+			vim.keymap.set({ "n", "v" }, "<leader>L", openai.help, { desc = "llm openai help" })
+			vim.keymap.set({ "n", "v" }, "<leader>l", openai.code, { desc = "llm openai code" })
+			vim.keymap.set({ "n", "v" }, "<leader>H", anthropic.help, { desc = "llm anthropic help" })
+			vim.keymap.set({ "n", "v" }, "<leader>h", anthropic.code, { desc = "llm anthropic code" })
 		end,
 	},
 }
