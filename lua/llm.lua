@@ -276,6 +276,10 @@ function M.handle_anthropic_spec_data(data_stream, event_state)
 		local assistant_message = { role = "assistant", content = anthropic_assistant_response }
 		table.insert(anthropic_messages, assistant_message)
 		anthropic_assistant_response = ""
+		local bufnr = vim.api.nvim_get_current_buf()
+		local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
+		vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", "" })
+		vim.api.nvim_win_set_cursor(0, { line + 2, 0 })
 	end
 end
 
