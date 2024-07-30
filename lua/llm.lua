@@ -250,37 +250,9 @@ local function get_prompt(opts)
 			vim.api.nvim_command("normal! d")
 		else
 			local bufnr = vim.api.nvim_get_current_buf()
-			local pos = vim.fn.getpos("'>")
-			local row = pos[2]
-			print_table(pos)
-			vim.api.nvim_buf_set_lines(bufnr, row, row, false, { "" })
-			vim.api.nvim_win_set_cursor(0, { row + 1, 0 })
-			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
-		end
-	else
-		prompt = M.get_lines_until_cursor()
-	end
-
-	return prompt
-end
-
---[[
-local function get_prompt(opts)
-	local replace = opts.replace
-	local visual_lines = M.get_visual_selection()
-	local prompt = ""
-
-	if visual_lines then
-		prompt = table.concat(visual_lines, "\n")
-		if replace then
-			vim.api.nvim_command("normal! d")
-		else
-			local bufnr = vim.api.nvim_get_current_buf()
-			local pos = vim.fn.getpos("'>")
-			vim.api.nvim_win_set_cursor(bufnr, { pos[2], pos[3] - 1 })
 			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "" })
-			vim.api.nvim_win_set_cursor(0, { line + 1, 0 })
+			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", "" })
+			vim.api.nvim_win_set_cursor(0, { line + 2, 0 })
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
 		end
 	else
@@ -289,7 +261,6 @@ local function get_prompt(opts)
 
 	return prompt
 end
-]]
 
 local anthropic_assistant_response = ""
 
