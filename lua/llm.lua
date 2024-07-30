@@ -386,6 +386,10 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 			end,
 			on_stderr = function(_, _) end,
 			on_exit = function()
+				local bufnr = vim.api.nvim_get_current_buf()
+				local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
+				vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", "" })
+				vim.api.nvim_win_set_cursor(0, { line + 2, 0 })
 				active_job = nil
 			end,
 		})
@@ -407,11 +411,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	})
 
 	vim.api.nvim_set_keymap("n", "<Esc>", ":doautocmd User LLM_Escape<CR>", { noremap = true, silent = true })
-
-	local bufnr = vim.api.nvim_get_current_buf()
-	local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-	vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", "" })
-	vim.api.nvim_win_set_cursor(0, { line + 2, 0 })
 
 	return active_job
 end
