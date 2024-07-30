@@ -252,10 +252,6 @@ local function get_prompt(opts)
 			local bufnr = vim.api.nvim_get_current_buf()
 			local pos = vim.fn.getpos("'>")
 			local row = pos[2]
-			local line_count = vim.api.nvim_buf_line_count(bufnr)
-			if row >= line_count then
-				row = line_count - 1
-			end
 			vim.api.nvim_buf_set_lines(bufnr, row, row, false, { "" })
 			vim.api.nvim_win_set_cursor(0, { row + 1, 0 })
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
@@ -409,9 +405,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 			on_stdout = function(_, out)
 				parse_and_call(out)
 			end,
-			on_stderr = function(_, out)
-				print("In error: " .. out)
-			end,
+			on_stderr = function(_, _) end,
 			on_exit = function()
 				active_job = nil
 			end,
