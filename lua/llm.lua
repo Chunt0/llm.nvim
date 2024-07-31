@@ -384,21 +384,23 @@ local perplexity_assistant_response = ""
 function M.handle_perplexity_spec_data(data_stream)
 	print("in handle perplexity spec data")
 	print(type(data_stream))
-	data_stream = data_stream:gsub("^data: ", "")
-	local json = vim.json.decode(data_stream)
-	if json.choices and json.choices[1] and json.choices[1].delta then
-		local content = json.choices[1].delta.content
-		if content then
-			write_string_at_cursor(content)
-			perplexity_assistant_response = perplexity_assistant_response .. content
+	if data_stream:match("data") then
+		data_stream = data_stream:gsub("^data: ", "")
+		local json = vim.json.decode(data_stream)
+		if json.choices and json.choices[1] and json.choices[1].delta then
+			local content = json.choices[1].delta.content
+			if content then
+				write_string_at_cursor(content)
+				perplexity_assistant_response = perplexity_assistant_response .. content
+			end
 		end
+		--local finish_reason = json.choices[1].finish_reason
+		--if finish_reason ~= vim.NIL then
+		--		local assistant_message = { role = "assistant", content = perplexity_assistant_response }
+		--		table.insert(perplexity_messages, assistant_message)
+		--		perplexity_assistant_response = ""
+		--	end
 	end
-	--local finish_reason = json.choices[1].finish_reason
-	--if finish_reason ~= vim.NIL then
-	--		local assistant_message = { role = "assistant", content = perplexity_assistant_response }
-	--		table.insert(perplexity_messages, assistant_message)
-	--		perplexity_assistant_response = ""
-	--	end
 end
 
 local group = vim.api.nvim_create_augroup("LLM_AutoGroup", { clear = true })
