@@ -385,6 +385,7 @@ function M.handle_perplexity_spec_data(data_stream)
 	if data_stream:match('"delta":') then
 		data_stream = data_stream:gsub("^data: ", "")
 		local json = vim.json.decode(data_stream)
+		print(data_stream)
 		if json.choices and json.choices[1] and json.choices[1].delta then
 			local content = json.choices[1].delta.content
 			if content then
