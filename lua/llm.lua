@@ -201,6 +201,46 @@ function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
 	return args
 end
 
+local perplexity_messages = {}
+local perplexity_count = 0
+
+function M.make_perplexity_spec_curl_args(opts, prompt, system_prompt)
+	print("Calling Perplexity: ", opts.model)
+	local url = opts.url
+	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+	local data = nil
+	if perplexity_count == 0 then
+		local message = { { role = "system", content = system_prompt }, { role = "user", content = prompt } }
+		data = {
+			messages = message,
+			model = opts.model,
+			temperature = 0.7,
+			stream = true,
+		}
+		for _, v in pairs(message) do
+			table.insert(perplexity_messages, v)
+		end
+		perplexity_count = 1
+	elseif perplexity_count == 1 then
+		local next_message = { role = "user", content = prompt }
+		table.insert(perplexity_messages, next_message)
+		data = {
+			messages = perplexity_messages,
+			model = opts.model,
+			temperature = 0.7,
+			stream = true,
+		}
+	end
+
+	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
+	if api_key then
+		table.insert(args, "-H")
+		table.insert(args, "Authorization: Bearer " .. api_key)
+	end
+	table.insert(args, url)
+	return args
+end
+
 local context = {}
 local max_length = 25000
 
@@ -336,6 +376,26 @@ function M.handle_ollama_spec_data(data_stream)
 				table.insert(context, tonumber(value))
 			end
 		end
+	end
+end
+
+local perplexity_assistant_response = ""
+
+function M.handle_perplexity_spec_data(data_stream)
+	if data_stream:match('"delta":') then
+		data_stream = data_stream:gsub("^data: ", "")
+		local json = vim.json.decode(data_stream)
+		if json.choices and json.choices[1] and json.choices[1].delta then
+			local content = json.choices[1].delta.content
+			if content then
+				write_string_at_cursor(content)
+				perplexity_assistant_response = perplexity_assistant_response .. content
+			end
+		end
+	elseif data_stream:match("[DONE]") then
+		local assistant_message = { role = "assistant", content = perplexity_assistant_response }
+		table.insert(perplexity_messages, assistant_message)
+		perplexity_assistant_response = ""
 	end
 end
 
