@@ -382,8 +382,6 @@ end
 local perplexity_assistant_response = ""
 
 function M.handle_perplexity_spec_data(data_stream)
-	print("in handle perplexity spec data")
-	print(type(data_stream))
 	if data_stream:match("data") then
 		data_stream = data_stream:gsub("^data: ", "")
 		local json = vim.json.decode(data_stream)
