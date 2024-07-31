@@ -394,8 +394,8 @@ function M.handle_perplexity_spec_data(data_stream)
 		end
 	end
 	local finish_reason = json.choices[1].finish_reason
-	print(finish_reason)
-	if finish_reason:match("stop") then
+	print(type(finish_reason))
+	if finish_reason then
 		local assistant_message = { role = "assistant", content = perplexity_assistant_response }
 		table.insert(perplexity_messages, assistant_message)
 		perplexity_assistant_response = ""
