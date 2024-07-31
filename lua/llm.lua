@@ -383,6 +383,7 @@ local perplexity_assistant_response = ""
 
 function M.handle_perplexity_spec_data(data_stream)
 	print("in handle perplexity spec data")
+	print(data_stream)
 	data_stream = data_stream:gsub("^data: ", "")
 	local json = vim.json.decode(data_stream)
 	if json.choices and json.choices[1] and json.choices[1].delta then
@@ -410,7 +411,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	local system_prompt = opts.system_prompt
 		or "You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly"
 	local args = make_curl_args_fn(opts, prompt, system_prompt)
-	print_table(args)
 
 	if active_job then
 		active_job:shutdown()
