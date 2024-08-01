@@ -1,6 +1,6 @@
 local M = {}
 
-local log_file_path = "log.json"
+local log_file_path = "../log.json"
 
 function M.log(log_entry)
 	print("In log function")
