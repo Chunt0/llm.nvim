@@ -291,8 +291,9 @@ local function get_prompt(opts)
 		else
 			local bufnr = vim.api.nvim_get_current_buf()
 			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", "" })
-			vim.api.nvim_win_set_cursor(0, { line + 2, 0 })
+			local agent_line = "---------------------------Agent"
+			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "" })
+			vim.api.nvim_win_set_cursor(0, { line + 3, 0 })
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
 		end
 	else
