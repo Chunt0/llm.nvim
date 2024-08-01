@@ -8,6 +8,7 @@ function M.log(log_entry)
 	local log_entries = {}
 
 	if log_file then
+		print("found log file")
 		local content = log_file:read("*a")
 		if content and content ~= "" then
 			log_entries = vim.json.decode(content)
