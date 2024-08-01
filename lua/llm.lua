@@ -409,6 +409,7 @@ local active_job = nil
 function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
 	vim.api.nvim_clear_autocmds({ group = group })
 	local prompt = get_prompt(opts)
+	local replace = opts.replace
 	local framework = opts.framework
 	local system_prompt = opts.system_prompt
 		or "You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly"
@@ -442,11 +443,13 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 			end,
 			on_stderr = function(_, _) end,
 			on_exit = vim.schedule_wrap(function()
-				local bufnr = vim.api.nvim_get_current_buf()
-				local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-				local user_line = "---------------------------User---------------------------"
-				vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", user_line, "", "" })
-				vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
+				if not replace then
+					local bufnr = vim.api.nvim_get_current_buf()
+					local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
+					local user_line = "---------------------------User---------------------------"
+					vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", user_line, "", "" })
+					vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
+				end
 				active_job = nil
 			end),
 		})
@@ -459,11 +462,13 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 			end,
 			on_stderr = function(_, _) end,
 			on_exit = vim.schedule_wrap(function()
-				local bufnr = vim.api.nvim_get_current_buf()
-				local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-				local user_line = "---------------------------User---------------------------"
-				vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", user_line, "", "" })
-				vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
+				if not replace then
+					local bufnr = vim.api.nvim_get_current_buf()
+					local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
+					local user_line = "---------------------------User---------------------------"
+					vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", user_line, "", "" })
+					vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
+				end
 				active_job = nil
 			end),
 		})
