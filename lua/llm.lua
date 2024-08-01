@@ -420,7 +420,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	local framework = opts.framework
 	local model = opts.model
 	local system_prompt = opts.system_prompt
-		or "You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly"
+		or "Yell at me for not setting my configuration for my llm plugin correctly"
 	local args = make_curl_args_fn(opts, prompt, system_prompt)
 
 	if active_job then
@@ -458,6 +458,17 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 					vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", user_line, "", "" })
 					vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
 				end
+				local user_message = { role = "user", content = prompt }
+				local time = os.date("%Y-%m-%d::%H:%M:%S")
+				local log_entry = {
+					time = time,
+					framework = framework,
+					model = model,
+					user = user_message,
+					assistant = assistant_message,
+				}
+				print_table(log_entry)
+				Log.log(log_entry)
 				active_job = nil
 				assistant_message = nil
 			end),
@@ -487,6 +498,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 					user = user_message,
 					assistant = assistant_message,
 				}
+				print_table(log_entry)
 				Log.log(log_entry)
 				active_job = nil
 				assistant_message = nil
