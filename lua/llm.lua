@@ -299,8 +299,9 @@ local function get_prompt(opts)
 		prompt = M.get_lines_until_cursor()
 		local bufnr = vim.api.nvim_get_current_buf()
 		local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-		vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", "" })
-		vim.api.nvim_win_set_cursor(0, { line + 2, 0 })
+		local agent_line = "---------------------------Agent"
+		vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "" })
+		vim.api.nvim_win_set_cursor(0, { line + 3, 0 })
 	end
 
 	return prompt
@@ -442,8 +443,9 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 			on_exit = vim.schedule_wrap(function()
 				local bufnr = vim.api.nvim_get_current_buf()
 				local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-				vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", "" })
-				vim.api.nvim_win_set_cursor(0, { line + 2, 0 })
+				local user_line = "---------------------------User"
+				vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", user_line, "" })
+				vim.api.nvim_win_set_cursor(0, { line + 3, 0 })
 				active_job = nil
 			end),
 		})
@@ -458,8 +460,9 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 			on_exit = vim.schedule_wrap(function()
 				local bufnr = vim.api.nvim_get_current_buf()
 				local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-				vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", "" })
-				vim.api.nvim_win_set_cursor(0, { line + 2, 0 })
+				local user_line = "---------------------------User"
+				vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", user_line, "" })
+				vim.api.nvim_win_set_cursor(0, { line + 3, 0 })
 				active_job = nil
 			end),
 		})
