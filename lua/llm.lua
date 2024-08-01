@@ -459,7 +459,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 					vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
 				end
 				local user_message = { role = "user", content = prompt }
-				local time = os.date("%Y-%m-%d::%H:%M:%S")
+				local time = os.date("%Y-%m-%dT%H:%M:%S")
 				local log_entry = {
 					time = time,
 					framework = framework,
@@ -490,7 +490,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 					vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
 				end
 				local user_message = { role = "user", content = prompt }
-				local time = os.date("%Y-%m-%d::%H:%M:%S")
+				local time = os.date("%Y-%m-%dT%H:%M:%S")
 				local log_entry = {
 					time = time,
 					framework = framework,
