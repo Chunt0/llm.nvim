@@ -1,14 +1,16 @@
 local M = {}
 
-local log_file_path = "../log.json"
-
 function M.log(log_entry)
-	print("In log function")
+	local date = os.date("%Y-%m-%d")
+	local log_directory = "/var/log/llm"
+	local log_file_path = log_directory .. date .. ".json"
+	local command = "mkdir -p " .. log_directory
+	os.execute(command)
+
 	local log_file = io.open(log_file_path, "r")
 	local log_entries = {}
 
 	if log_file then
-		print("found log file")
 		local content = log_file:read("*a")
 		if content and content ~= "" then
 			print(content)
