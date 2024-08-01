@@ -1,5 +1,6 @@
 local M = {}
 local Job = require("plenary.job")
+local Log = require("log")
 
 local function get_api_key(name)
 	return os.getenv(name)
@@ -308,6 +309,8 @@ local function get_prompt(opts)
 	return prompt
 end
 
+local assistant_message = nil
+
 local anthropic_assistant_response = ""
 
 function M.handle_anthropic_spec_data(data_stream, event_state)
@@ -319,7 +322,7 @@ function M.handle_anthropic_spec_data(data_stream, event_state)
 			anthropic_assistant_response = anthropic_assistant_response .. content
 		end
 	elseif event_state == "message_stop" then
-		local assistant_message = { role = "assistant", content = anthropic_assistant_response }
+		assistant_message = { role = "assistant", content = anthropic_assistant_response }
 		table.insert(anthropic_messages, assistant_message)
 		anthropic_assistant_response = ""
 	end
@@ -339,7 +342,7 @@ function M.handle_openai_spec_data(data_stream)
 			end
 		end
 	elseif data_stream:match("[DONE]") then
-		local assistant_message = { role = "assistant", content = openai_assistant_response }
+		assistant_message = { role = "assistant", content = openai_assistant_response }
 		table.insert(openai_messages, assistant_message)
 		openai_assistant_response = ""
 	end
@@ -359,17 +362,20 @@ function M.handle_groq_spec_data(data_stream)
 			end
 		end
 	elseif data_stream:match("[DONE]") then
-		local assistant_message = { role = "assistant", content = groq_assistant_response }
+		assistant_message = { role = "assistant", content = groq_assistant_response }
 		table.insert(groq_messages, assistant_message)
 		groq_assistant_response = ""
 	end
 end
+
+local ollama_assistant_response = ""
 
 function M.handle_ollama_spec_data(data_stream)
 	local json = vim.json.decode(data_stream)
 	if json.response and json.done == false then
 		local content = json.response
 		if content then
+			ollama_assistant_response = ollama_assistant_response .. content
 			write_string_at_cursor(content)
 		end
 	elseif json.done then
@@ -378,6 +384,7 @@ function M.handle_ollama_spec_data(data_stream)
 				table.insert(context, tonumber(value))
 			end
 		end
+		assistant_message = { role = "assistant", content = ollama_assistant_response }
 	end
 end
 
@@ -396,7 +403,7 @@ function M.handle_perplexity_spec_data(data_stream)
 		end
 		local finish_reason = json.choices[1].finish_reason
 		if finish_reason ~= vim.NIL then
-			local assistant_message = { role = "assistant", content = perplexity_assistant_response }
+			assistant_message = { role = "assistant", content = perplexity_assistant_response }
 			table.insert(perplexity_messages, assistant_message)
 			perplexity_assistant_response = ""
 		end
@@ -411,6 +418,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	local prompt = get_prompt(opts)
 	local replace = opts.replace
 	local framework = opts.framework
+	local model = opts.model
 	local system_prompt = opts.system_prompt
 		or "You are a tsundere uwu anime. Yell at me for not setting my configuration for my llm plugin correctly"
 	local args = make_curl_args_fn(opts, prompt, system_prompt)
@@ -451,6 +459,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 					vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
 				end
 				active_job = nil
+				assistant_message = nil
 			end),
 		})
 	else
@@ -469,7 +478,18 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 					vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", user_line, "", "" })
 					vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
 				end
+				local user_message = { role = "user", content = prompt }
+				local time = os.date("%Y-%m-%d::%H:%M:%S")
+				local log_entry = {
+					time = time,
+					framework = framework,
+					model = model,
+					user = user_message,
+					assistant = assistant_message,
+				}
+				Log.log(log_entry)
 				active_job = nil
+				assistant_message = nil
 			end),
 		})
 	end
