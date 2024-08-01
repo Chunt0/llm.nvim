@@ -3,6 +3,7 @@ local M = {}
 local log_file_path = "log.json"
 
 function M.log(log_entry)
+	print("In log function")
 	local log_file = io.open(log_file_path, "r")
 	local log_entries = {}
 
