@@ -3,7 +3,7 @@ local M = {}
 function M.log(log_entry)
 	local home_path = os.getenv("HOME")
 	local date = os.date("%Y-%m-%d")
-	local log_directory = home_path .. "/.logs/"
+	local log_directory = home_path .. "/.logs/llm/"
 	local log_file_path = log_directory .. date .. ".json"
 	local command = "mkdir -p " .. log_directory
 	os.execute(command)
