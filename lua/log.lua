@@ -14,7 +14,6 @@ function M.log(log_entry)
 	if log_file then
 		local content = log_file:read("*a")
 		if content and content ~= "" then
-			print(content)
 			log_entries = vim.json.decode(content)
 		end
 		log_file:close()
