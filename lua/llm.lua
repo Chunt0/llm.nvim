@@ -467,7 +467,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 					user = user_message,
 					assistant = assistant_message,
 				}
-				print_table(log_entry)
 				Log.log(log_entry)
 				active_job = nil
 				assistant_message = nil
@@ -498,7 +497,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 					user = user_message,
 					assistant = assistant_message,
 				}
-				print_table(log_entry)
 				Log.log(log_entry)
 				active_job = nil
 				assistant_message = nil
@@ -506,7 +504,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 		})
 	end
 
-	print("starting " .. opts.framework .. " job...")
 	active_job:start()
 
 	vim.api.nvim_create_autocmd("User", {
