@@ -1,5 +1,5 @@
 local variables = {
-	temp = 1.7,
+	temp = 1.0,
 }
 
 return variables
