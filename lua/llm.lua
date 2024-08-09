@@ -135,7 +135,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 		data = {
 			messages = message,
 			model = opts.model,
-			temperature = 0.7,
+			temperature = opts.temp,
 			stream = true,
 		}
 		for _, v in pairs(message) do
@@ -148,12 +148,31 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 		data = {
 			messages = openai_messages,
 			model = opts.model,
-			temperature = 0.7,
+			temperature = opts.temp,
 			stream = true,
 		}
 	end
 
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
+	if api_key then
+		table.insert(args, "-H")
+		table.insert(args, "Authorization: Bearer " .. api_key)
+	end
+	table.insert(args, url)
+	return args
+end
+
+function M.make_dalle_spec_curl_args(opts, prompt)
+	print("Calling OpenAI: DALL-E 3")
+	local url = opts.url
+	local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
+	local data = {
+		model = "dall-e-3",
+		prompt = prompt,
+		n = 1,
+		size = "1024x1024",
+	}
+	local args = { "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	if api_key then
 		table.insert(args, "-H")
 		table.insert(args, "Authorization: Bearer " .. api_key)
@@ -175,7 +194,7 @@ function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
 		data = {
 			messages = message,
 			model = opts.model,
-			temperature = 0.7,
+			temperature = opts.temp,
 			stream = true,
 		}
 		for _, v in pairs(message) do
@@ -188,7 +207,7 @@ function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
 		data = {
 			messages = groq_messages,
 			model = opts.model,
-			temperature = 0.7,
+			temperature = opts.temp,
 			stream = true,
 		}
 	end
@@ -215,7 +234,7 @@ function M.make_perplexity_spec_curl_args(opts, prompt, system_prompt)
 		data = {
 			messages = message,
 			model = opts.model,
-			temperature = 0.7,
+			temperature = opts.temp,
 			stream = true,
 		}
 		for _, v in pairs(message) do
@@ -228,7 +247,7 @@ function M.make_perplexity_spec_curl_args(opts, prompt, system_prompt)
 		data = {
 			messages = perplexity_messages,
 			model = opts.model,
-			temperature = 0.7,
+			temperature = opts.temp,
 			stream = true,
 		}
 	end
@@ -345,6 +364,16 @@ function M.handle_openai_spec_data(data_stream)
 		assistant_message = { role = "assistant", content = openai_assistant_response }
 		table.insert(openai_messages, assistant_message)
 		openai_assistant_response = ""
+	end
+end
+
+function M.handle_dalle_spec_data(data_stream)
+	local json = vim.json.decode(data_stream)
+	if json.data[0].url then
+		local content = json.data[0].url
+		if content then
+			write_string_at_cursor(content)
+		end
 	end
 end
 
