@@ -368,6 +368,7 @@ function M.handle_openai_spec_data(data_stream)
 end
 
 function M.handle_dalle_spec_data(data_stream)
+	print(data_stream)
 	local json = vim.json.decode(data_stream)
 	if json.data[0].url then
 		local content = json.data[0].url
