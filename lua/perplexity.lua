@@ -1,6 +1,6 @@
 local llm = require("llm")
 local prompts = require("prompts")
-local models = require("models")
+local models, perplexity = require("models")
 
 local PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
 local PERPLEXITY_API_KEY = "PERPLEXITY_API_KEY"
@@ -11,7 +11,7 @@ local M = {}
 function M.code()
 	llm.invoke_llm_and_stream_into_editor({
 		url = PERPLEXITY_URL,
-		model = models.model,
+		model = models.perplexity,
 		api_key_name = PERPLEXITY_API_KEY,
 		system_prompt = prompts.code_prompt,
 		replace = true,
@@ -22,7 +22,7 @@ end
 function M.invoke()
 	llm.invoke_llm_and_stream_into_editor({
 		url = PERPLEXITY_URL,
-		model = models.model,
+		model = models.perplexity,
 		api_key_name = PERPLEXITY_API_KEY,
 		system_prompt = prompts.prompt,
 		replace = false,
