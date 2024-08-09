@@ -30,6 +30,7 @@ function M.invoke()
 		system_prompt = prompts.system_prompt,
 		replace = false,
 		framework = FRAMEWORK,
+		temp = options.temp,
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
 end
 
@@ -38,8 +39,6 @@ function M.dalle()
 		url = DALLE_URL,
 		model = models.openai,
 		api_key_name = OPENAI_API_KEY_NAME,
-		system_prompt = prompts.system_prompt,
-		replace = false,
 		framework = FRAMEWORK,
 	}, llm.make_dalle_spec_curl_args, llm.handle_dalle_spec_data)
 end
