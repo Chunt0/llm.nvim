@@ -373,7 +373,6 @@ function M.handle_dalle_spec_data(data_stream)
 	count = count + 1
 	print(data_stream)
 	if data_stream:match('"url":') then
-		data_stream = data_stream:match("^&s*(.-)%s*$")
 		local content = data_stream:match('"url": "(https://[^"]+)"')
 		write_string_at_cursor(content)
 	end
