@@ -19,12 +19,12 @@ function M.code()
 	}, llm.make_groq_spec_curl_args, llm.handle_groq_spec_data)
 end
 
-function M.help()
+function M.invoke()
 	llm.invoke_llm_and_stream_into_editor({
 		url = GROQ_URL,
 		model = GROQ_MODEL,
 		api_key_name = GROQ_API_KEY,
-		system_prompt = prompts.helpful_prompt,
+		system_prompt = prompts.prompt,
 		replace = false,
 		framework = FRAMEWORK,
 	}, llm.make_groq_spec_curl_args, llm.handle_groq_spec_data)

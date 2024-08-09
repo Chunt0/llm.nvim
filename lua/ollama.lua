@@ -9,11 +9,11 @@ local FRAMEWORK = "OLLAMA"
 
 local M = {}
 
-function M.help()
+function M.invoke()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OLLAMA_URL,
 		model = OLLAMA_MODEL,
-		system_prompt = prompts.helpful_prompt,
+		system_prompt = prompts.prompt,
 		replace = false,
 		context = true,
 		framework = FRAMEWORK,

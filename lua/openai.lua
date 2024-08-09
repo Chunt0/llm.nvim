@@ -19,7 +19,7 @@ function M.code()
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
 end
 
-function M.help()
+function M.invoke()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OPENAI_URL,
 		model = OPENAI_MODEL,
