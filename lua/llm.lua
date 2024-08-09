@@ -373,11 +373,7 @@ function M.handle_dalle_spec_data(data_stream)
 	count = count + 1
 	print(data_stream)
 	if data_stream:match('"url":') then
-		local json = vim.json.decode(data_stream)
-		local content = json.url
-		if content then
-			write_string_at_cursor(content)
-		end
+		write_string_at_cursor(data_stream)
 	end
 end
 
