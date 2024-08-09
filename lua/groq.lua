@@ -1,6 +1,7 @@
 local llm = require("llm")
 local prompts = require("prompts")
 local models = require("models")
+local vars = require("variables")
 
 local GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 local GROQ_API_KEY = "GROQ_API_KEY"
@@ -16,6 +17,7 @@ function M.code()
 		system_prompt = prompts.code_prompt,
 		replace = true,
 		framework = FRAMEWORK,
+		temp = vars.temp,
 	}, llm.make_groq_spec_curl_args, llm.handle_groq_spec_data)
 end
 
@@ -27,6 +29,7 @@ function M.invoke()
 		system_prompt = prompts.system_prompt,
 		replace = false,
 		framework = FRAMEWORK,
+		temp = vars.temp,
 	}, llm.make_groq_spec_curl_args, llm.handle_groq_spec_data)
 end
 
