@@ -375,6 +375,7 @@ function M.handle_dalle_spec_data(data_stream)
 	if data_stream:match('"url":') then
 		local content = data_stream:match('"url": "(https://[^"]+)"')
 		write_string_at_cursor(content)
+		assistant_message = { role = "assistant", content = content }
 	end
 end
 
