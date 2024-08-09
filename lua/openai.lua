@@ -1,8 +1,9 @@
 local llm = require("llm")
 local prompts = require("prompts")
+local models = require("models")
 
 local OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-local OPENAI_MODEL = "gpt-4o"
+--local OPENAI_MODEL = "gpt-4o"
 local OPENAI_API_KEY_NAME = "OPENAI_API_KEY"
 local FRAMEWORK = "OPENAI"
 
@@ -11,7 +12,7 @@ local M = {}
 function M.code()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OPENAI_URL,
-		model = OPENAI_MODEL,
+		model = models.openai,
 		api_key_name = OPENAI_API_KEY_NAME,
 		system_prompt = prompts.code_prompt,
 		replace = true,
@@ -22,7 +23,7 @@ end
 function M.invoke()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OPENAI_URL,
-		model = OPENAI_MODEL,
+		model = models.openai,
 		api_key_name = OPENAI_API_KEY_NAME,
 		system_prompt = prompts.prompt,
 		replace = false,
@@ -33,7 +34,7 @@ end
 function M.en2ch()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OPENAI_URL,
-		model = OPENAI_MODEL,
+		model = models.openai,
 		system_prompt = prompts.en2ch_prompt,
 		replace = false,
 		framework = FRAMEWORK,
@@ -43,7 +44,7 @@ end
 function M.en2ar()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OPENAI_URL,
-		model = OPENAI_MODEL,
+		model = models.openai,
 		system_prompt = prompts.en2ar_prompt,
 		replace = false,
 		framework = FRAMEWORK,

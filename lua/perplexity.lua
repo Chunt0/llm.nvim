@@ -1,6 +1,6 @@
 local llm = require("llm")
 local prompts = require("prompts")
-local models, perplexity = require("models")
+local models = require("models")
 
 local PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
 local PERPLEXITY_API_KEY = "PERPLEXITY_API_KEY"
