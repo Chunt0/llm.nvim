@@ -367,7 +367,10 @@ function M.handle_openai_spec_data(data_stream)
 	end
 end
 
+local count = 1
 function M.handle_dalle_spec_data(data_stream)
+	print(count)
+	count = count + 1
 	print(data_stream)
 	--	local json = vim.json.decode(data_stream)
 	--	if json.data[0].url then
