@@ -19,6 +19,8 @@ function M.code()
 		replace = true,
 		framework = FRAMEWORK,
 		temp = vars.temp,
+		presence_penalty = vars.presence_penalty,
+		top_p = vars.top_p,
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
 end
 
@@ -31,6 +33,8 @@ function M.invoke()
 		replace = false,
 		framework = FRAMEWORK,
 		temp = vars.temp,
+		presence_penalty = vars.presence_penalty,
+		top_p = vars.top_p,
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
 end
 
@@ -50,6 +54,9 @@ function M.en2ch()
 		system_prompt = prompts.en2ch_prompt,
 		replace = false,
 		framework = FRAMEWORK,
+		temp = vars.temp,
+		presence_penalty = vars.presence_penalty,
+		top_p = vars.top_p,
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
 end
 
@@ -60,6 +67,9 @@ function M.en2ar()
 		system_prompt = prompts.en2ar_prompt,
 		replace = false,
 		framework = FRAMEWORK,
+		temp = vars.temp,
+		presence_penalty = vars.presence_penalty,
+		top_p = vars.top_p,
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
 end
 

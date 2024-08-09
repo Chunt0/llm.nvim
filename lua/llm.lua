@@ -137,6 +137,8 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 			model = opts.model,
 			temperature = opts.temp,
 			stream = true,
+			presence_penalty = opts.presence_penalty,
+			top_p = opts.top_p,
 		}
 		for _, v in pairs(message) do
 			table.insert(openai_messages, v)
@@ -150,6 +152,8 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 			model = opts.model,
 			temperature = opts.temp,
 			stream = true,
+			presence_penalty = opts.presence_penalty,
+			top_p = opts.top_p,
 		}
 	end
 
@@ -196,6 +200,8 @@ function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
 			model = opts.model,
 			temperature = opts.temp,
 			stream = true,
+			presence_penalty = opts.presence_penalty,
+			top_p = opts.top_p,
 		}
 		for _, v in pairs(message) do
 			table.insert(groq_messages, v)
@@ -209,6 +215,8 @@ function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
 			model = opts.model,
 			temperature = opts.temp,
 			stream = true,
+			presence_penalty = opts.presence_penalty,
+			top_p = opts.top_p,
 		}
 	end
 
@@ -236,6 +244,8 @@ function M.make_perplexity_spec_curl_args(opts, prompt, system_prompt)
 			model = opts.model,
 			temperature = opts.temp,
 			stream = true,
+			presence_penalty = opts.presence_penalty,
+			top_p = opts.top_p,
 		}
 		for _, v in pairs(message) do
 			table.insert(perplexity_messages, v)
@@ -249,6 +259,8 @@ function M.make_perplexity_spec_curl_args(opts, prompt, system_prompt)
 			model = opts.model,
 			temperature = opts.temp,
 			stream = true,
+			presence_penalty = opts.presence_penalty,
+			top_p = opts.top_p,
 		}
 	end
 

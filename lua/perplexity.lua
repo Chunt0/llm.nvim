@@ -18,6 +18,8 @@ function M.code()
 		replace = true,
 		framework = FRAMEWORK,
 		temp = vars.temp,
+		presence_penalty = vars.presence_penalty,
+		top_p = vars.top_p,
 	}, llm.make_perplexity_spec_curl_args, llm.handle_perplexity_spec_data)
 end
 
@@ -30,6 +32,8 @@ function M.invoke()
 		replace = false,
 		framework = FRAMEWORK,
 		temp = vars.temp,
+		presence_penalty = vars.presence_penalty,
+		top_p = vars.top_p,
 	}, llm.make_perplexity_spec_curl_args, llm.handle_perplexity_spec_data)
 end
 
