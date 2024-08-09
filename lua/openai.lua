@@ -1,7 +1,7 @@
 local llm = require("llm")
 local prompts = require("prompts")
 local models = require("models")
-local options = require("options")
+local vars = require("variables")
 
 local OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 local DALLE_URL = "https://api.openai.com/v1/images/generations"
@@ -18,7 +18,7 @@ function M.code()
 		system_prompt = prompts.code_prompt,
 		replace = true,
 		framework = FRAMEWORK,
-		temp = options.temp,
+		temp = vars.temp,
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
 end
 
@@ -30,7 +30,7 @@ function M.invoke()
 		system_prompt = prompts.system_prompt,
 		replace = false,
 		framework = FRAMEWORK,
-		temp = options.temp,
+		temp = vars.temp,
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
 end
 
