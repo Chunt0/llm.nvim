@@ -24,7 +24,7 @@ function M.invoke()
 		url = PERPLEXITY_URL,
 		model = models.perplexity,
 		api_key_name = PERPLEXITY_API_KEY,
-		system_prompt = prompts.prompt,
+		system_prompt = prompts.system_prompt,
 		replace = false,
 		framework = FRAMEWORK,
 	}, llm.make_perplexity_spec_curl_args, llm.handle_perplexity_spec_data)

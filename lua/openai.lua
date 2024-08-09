@@ -3,7 +3,6 @@ local prompts = require("prompts")
 local models = require("models")
 
 local OPENAI_URL = "https://api.openai.com/v1/chat/completions"
---local OPENAI_MODEL = "gpt-4o"
 local OPENAI_API_KEY_NAME = "OPENAI_API_KEY"
 local FRAMEWORK = "OPENAI"
 
@@ -25,7 +24,7 @@ function M.invoke()
 		url = OPENAI_URL,
 		model = models.openai,
 		api_key_name = OPENAI_API_KEY_NAME,
-		system_prompt = prompts.prompt,
+		system_prompt = prompts.system_prompt,
 		replace = false,
 		framework = FRAMEWORK,
 	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
