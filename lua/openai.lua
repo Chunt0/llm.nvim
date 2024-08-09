@@ -1,7 +1,7 @@
 local llm = require("llm")
 local prompts = require("prompts")
 local models = require("models")
-local vars = require("adjustments")
+local vars = require("variables")
 
 local OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 local DALLE_URL = "https://api.openai.com/v1/images/generations"
