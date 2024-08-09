@@ -1,5 +1,5 @@
 local options = {
-	temp = 1.0,
+	temp = 0.7,
 }
 
 return options
