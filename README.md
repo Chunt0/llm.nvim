@@ -52,8 +52,11 @@ return {
 Remember to set your api keys as system variables. Something like this in your .bashrc:
 
 export OPENAI_API_KEY="fakeapikeyoweiuyrhgfoiwqhgertouiy23g5tiqu34hr"
+
 export GROQ_API_KEY="fakeapikeyoweiuyrhgfoiwqhgertouiy23g5tiqu34hr"
+
 export ANTHROPIC_API_KEY="fakeapikeyoweiuyrhgfoiwqhgertouiy23g5tiqu34hr"
+
 export PERPLEXITY_API_KEY="fakeapikeyoweiuyrhgfoiwqhgertouiy23g5tiqu34hr"
 
 If you only have some or just one of the keys, that's fine, it wont break if the other functions don't have there keys set - you just wont be able to use them.
