@@ -19,6 +19,13 @@ local function print_table(t)
 	end
 end
 
+local function get_window_text()
+	local buf = vim.api.nvim_get_current_buf()
+	local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+	local text = table.concat(lines, "\n")
+	return text
+end
+
 local function trim_context(context, max_length)
 	local len = #context
 	if len > max_length then
@@ -319,7 +326,11 @@ local function get_prompt(opts)
 	if visual_lines then
 		prompt = table.concat(visual_lines, "\n")
 		if replace then
-			prompt = prompt
+			local window_text = get_window_text()
+			prompt = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE. I will first give you the coding context that I am working in and then the prompt. The coding context is there to give you an idea of waht the program is and what variables I am currently using. Here is the context: \n"
+				.. window_text
+				.. "# Here is the prompt: \n"
+				.. prompt
 				.. "\nONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IN PROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY."
 			vim.api.nvim_command("normal! d")
 		else
