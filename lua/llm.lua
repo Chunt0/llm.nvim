@@ -98,6 +98,12 @@ local excluded_extensions = {
 
 -- Function to check if a file should be excluded
 local function should_exclude_file(filename)
+	-- Check for specific files to exclude
+	if filename == "chat.md" or filename == "notes.md" then
+		return true
+	end
+
+	-- Check file extension
 	local extension = filename:match("%.([^%.]+)$")
 	if extension then
 		for _, excluded_ext in ipairs(excluded_extensions) do
@@ -116,7 +122,7 @@ local function get_all_buffers_text()
 	for _, buf in ipairs(buffers) do
 		if vim.api.nvim_buf_is_loaded(buf) then
 			local filename = vim.api.nvim_buf_get_name(buf)
-			if should_exclude_file(filename) then
+			if not should_exclude_file(filename) then
 				local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
 				-- Add filename as the first line
