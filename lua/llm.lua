@@ -318,6 +318,7 @@ local function get_prompt(opts)
 
 	if visual_lines then
 		prompt = table.concat(visual_lines, "\n")
+			+ "\nDo not explain what you did outside of the code block. ONLY RESPOND WITH CODE, ONLY MAKE SIMPLE COMMENTS IN THE CODE."
 		if replace then
 			vim.api.nvim_command("normal! d")
 		else
