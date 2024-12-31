@@ -320,7 +320,7 @@ local function get_prompt(opts)
 		prompt = table.concat(visual_lines, "\n")
 		if replace then
 			prompt = prompt
-				.. "\nONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE."
+				.. "\nONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IN PROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY."
 			vim.api.nvim_command("normal! d")
 		else
 			local bufnr = vim.api.nvim_get_current_buf()
