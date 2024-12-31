@@ -15,6 +15,7 @@ function M.invoke()
 		model = models.ollama,
 		system_prompt = prompts.prompt,
 		replace = false,
+		code_chat = false,
 		context = true,
 		framework = FRAMEWORK,
 	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)
@@ -26,6 +27,19 @@ function M.code()
 		model = OLLAMA_MODEL_CODE,
 		system_prompt = prompts.code_prompt,
 		replace = true,
+		code_chat = false,
+		context = false,
+		framework = FRAMEWORK,
+	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)
+end
+
+function M.code_chat()
+	llm.invoke_llm_and_stream_into_editor({
+		url = OLLAMA_URL,
+		model = OLLAMA_MODEL_CODE,
+		system_prompt = prompts.code_prompt,
+		replace = true,
+		code_chat = true,
 		context = false,
 		framework = FRAMEWORK,
 	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)
@@ -37,6 +51,7 @@ function M.en2ch()
 		model = OLLAMA_MODEL_EN2CH,
 		system_prompt = prompts.en2ch_prompt,
 		replace = false,
+		code_chat = false,
 		context = false,
 		framework = FRAMEWORK,
 	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)
@@ -48,6 +63,7 @@ function M.ch2en()
 		model = OLLAMA_MODEL_EN2CH,
 		system_prompt = prompts.ch2en_prompt,
 		replace = false,
+		code_chat = false,
 		context = false,
 		framework = FRAMEWORK,
 	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)

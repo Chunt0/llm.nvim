@@ -10,20 +10,6 @@ local FRAMEWORK = "OPENAI"
 
 local M = {}
 
-function M.code()
-	llm.invoke_llm_and_stream_into_editor({
-		url = OPENAI_URL,
-		model = models.openai,
-		api_key_name = OPENAI_API_KEY_NAME,
-		system_prompt = prompts.code_prompt,
-		replace = true,
-		framework = FRAMEWORK,
-		temp = vars.temp,
-		presence_penalty = vars.presence_penalty,
-		top_p = vars.top_p,
-	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
-end
-
 function M.invoke()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OPENAI_URL,
@@ -31,6 +17,37 @@ function M.invoke()
 		api_key_name = OPENAI_API_KEY_NAME,
 		system_prompt = prompts.system_prompt,
 		replace = false,
+		code_chat = false,
+		framework = FRAMEWORK,
+		temp = vars.temp,
+		presence_penalty = vars.presence_penalty,
+		top_p = vars.top_p,
+	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
+end
+
+function M.code()
+	llm.invoke_llm_and_stream_into_editor({
+		url = OPENAI_URL,
+		model = models.openai,
+		api_key_name = OPENAI_API_KEY_NAME,
+		system_prompt = prompts.code_prompt,
+		replace = true,
+		code_chat = false,
+		framework = FRAMEWORK,
+		temp = vars.temp,
+		presence_penalty = vars.presence_penalty,
+		top_p = vars.top_p,
+	}, llm.make_openai_spec_curl_args, llm.handle_openai_spec_data)
+end
+
+function M.code_chat()
+	llm.invoke_llm_and_stream_into_editor({
+		url = OPENAI_URL,
+		model = models.openai,
+		api_key_name = OPENAI_API_KEY_NAME,
+		system_prompt = prompts.code_prompt,
+		replace = true,
+		code_chat = true,
 		framework = FRAMEWORK,
 		temp = vars.temp,
 		presence_penalty = vars.presence_penalty,
@@ -53,6 +70,7 @@ function M.en2ch()
 		model = models.openai,
 		system_prompt = prompts.en2ch_prompt,
 		replace = false,
+		code_chat = false,
 		framework = FRAMEWORK,
 		temp = vars.temp,
 		presence_penalty = vars.presence_penalty,
@@ -66,6 +84,7 @@ function M.en2ar()
 		model = models.openai,
 		system_prompt = prompts.en2ar_prompt,
 		replace = false,
+		code_chat = false,
 		framework = FRAMEWORK,
 		temp = vars.temp,
 		presence_penalty = vars.presence_penalty,

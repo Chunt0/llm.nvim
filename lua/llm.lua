@@ -19,6 +19,96 @@ local function print_table(t)
 	end
 end
 
+local excluded_extensions = {
+	-- Configuration files
+	".env",
+	".gitignore",
+	".dockerignore",
+	".editorconfig",
+
+	-- Database files
+	".db",
+	".sqlite",
+	".sqlite3",
+
+	-- Binary files
+	".exe",
+	".dll",
+	".so",
+	".dylib",
+
+	-- Image files
+	".jpg",
+	".jpeg",
+	".png",
+	".gif",
+	".bmp",
+	".svg",
+
+	-- Audio files
+	".mp3",
+	".wav",
+	".ogg",
+
+	-- Video files
+	".mp4",
+	".avi",
+	".mov",
+
+	-- Compressed files
+	".zip",
+	".rar",
+	".7z",
+	".tar",
+	".gz",
+
+	-- Document files
+	".pdf",
+	".doc",
+	".docx",
+	".xls",
+	".xlsx",
+	".ppt",
+	".pptx",
+
+	-- Log files
+	".log",
+
+	-- Temporary files
+	".tmp",
+	".temp",
+
+	-- Backup files
+	".bak",
+	".backup",
+
+	-- Cache files
+	".cache",
+
+	-- Package lock files
+	"package-lock.json",
+	"yarn.lock",
+	"Gemfile.lock",
+
+	-- Compiled files
+	".pyc",
+	".class",
+	".o",
+}
+
+-- Function to check if a file should be excluded
+local function should_exclude_file(filename)
+	local extension = filename:match("%.([^%.]+)$")
+	if extension then
+		for _, excluded_ext in ipairs(excluded_extensions) do
+			if excluded_ext:sub(2) == extension then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 local function get_all_buffers_text()
 	local buffers = vim.api.nvim_list_bufs()
 	local all_text = {}
@@ -26,17 +116,19 @@ local function get_all_buffers_text()
 	for _, buf in ipairs(buffers) do
 		if vim.api.nvim_buf_is_loaded(buf) then
 			local filename = vim.api.nvim_buf_get_name(buf)
-			local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+			if should_exclude_file(filename) then
+				local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
-			-- Add filename as the first line
-			table.insert(all_text, "File: " .. filename)
+				-- Add filename as the first line
+				table.insert(all_text, "File: " .. filename)
 
-			-- Add buffer content
-			local buffer_text = table.concat(lines, "\n")
-			table.insert(all_text, buffer_text)
+				-- Add buffer content
+				local buffer_text = table.concat(lines, "\n")
+				table.insert(all_text, buffer_text)
 
-			-- Add a separator between buffers
-			table.insert(all_text, "\n---\n")
+				-- Add a separator between buffers
+				table.insert(all_text, "\n---\n")
+			end
 		end
 	end
 
@@ -352,6 +444,18 @@ local function get_prompt(opts)
 				.. prompt
 				.. "\nONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IN PROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY."
 			vim.api.nvim_command("normal! d")
+		elseif opts.code_chat then
+			local bufnr = vim.api.nvim_get_current_buf()
+			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
+			local agent_line = "---------------------------Agent---------------------------"
+			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
+			vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
+			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
+			local window_text = get_all_buffers_text()
+			local prompt = "# You are a highly knowledgeable coding assistant. I will give you the current code context and you will answer my questions with this context to help guide you. \n\n # Code Context: \n"
+				.. window_text
+				.. "\n\n# User question: \n"
+				.. prompt
 		else
 			local bufnr = vim.api.nvim_get_current_buf()
 			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
