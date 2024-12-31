@@ -19,11 +19,28 @@ local function print_table(t)
 	end
 end
 
-local function get_window_text()
-	local buf = vim.api.nvim_get_current_buf()
-	local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-	local text = table.concat(lines, "\n")
-	return text
+local function get_all_buffers_text()
+	local buffers = vim.api.nvim_list_bufs()
+	local all_text = {}
+
+	for _, buf in ipairs(buffers) do
+		if vim.api.nvim_buf_is_loaded(buf) then
+			local filename = vim.api.nvim_buf_get_name(buf)
+			local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
+			-- Add filename as the first line
+			table.insert(all_text, "File: " .. filename)
+
+			-- Add buffer content
+			local buffer_text = table.concat(lines, "\n")
+			table.insert(all_text, buffer_text)
+
+			-- Add a separator between buffers
+			table.insert(all_text, "\n---\n")
+		end
+	end
+
+	return table.concat(all_text, "\n")
 end
 
 local function trim_context(context, max_length)
@@ -91,6 +108,7 @@ end
 
 local anthropic_messages = {}
 local anthropic_count = 0
+local anthropic_max_token_length = 200000
 
 function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
 	print("Calling Anthropic: ", opts.model)
@@ -131,6 +149,7 @@ end
 
 local openai_messages = {}
 local openai_count = 0
+local openai_max_input_tokens = 126000
 
 function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	print("Calling OpenAI: ", opts.model)
@@ -326,7 +345,7 @@ local function get_prompt(opts)
 	if visual_lines then
 		prompt = table.concat(visual_lines, "\n")
 		if replace then
-			local window_text = get_window_text()
+			local window_text = get_all_buffers_text()
 			prompt = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE. I will first give you the coding context that I am working in and then the prompt. The coding context is there to give you an idea of waht the program is and what variables I am currently using. Here is the context: \n"
 				.. window_text
 				.. "# Here is the prompt: \n"
