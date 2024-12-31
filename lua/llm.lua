@@ -122,19 +122,19 @@ local function get_all_buffers_text()
 	for _, buf in ipairs(buffers) do
 		if vim.api.nvim_buf_is_loaded(buf) then
 			local filename = vim.api.nvim_buf_get_name(buf)
-			if not should_exclude_file(filename) then
-				local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+			--if not should_exclude_file(filename) then
+			local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
-				-- Add filename as the first line
-				table.insert(all_text, "File: " .. filename)
+			-- Add filename as the first line
+			table.insert(all_text, "File: " .. filename)
 
-				-- Add buffer content
-				local buffer_text = table.concat(lines, "\n")
-				table.insert(all_text, buffer_text)
+			-- Add buffer content
+			local buffer_text = table.concat(lines, "\n")
+			table.insert(all_text, buffer_text)
 
-				-- Add a separator between buffers
-				table.insert(all_text, "\n---\n")
-			end
+			-- Add a separator between buffers
+			table.insert(all_text, "\n---\n")
+			--end
 		end
 	end
 

@@ -38,7 +38,7 @@ function M.code_chat()
 		model = models.anthropic,
 		api_key_name = ANTHROPIC_API_KEY_NAME,
 		system_prompt = prompts.code_prompt,
-		replace = true,
+		replace = false,
 		code_chat = true,
 		framework = FRAMEWORK,
 	}, llm.make_anthropic_spec_curl_args, llm.handle_anthropic_spec_data)
