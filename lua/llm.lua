@@ -214,7 +214,6 @@ end
 
 local anthropic_messages = {}
 local anthropic_count = 0
-local anthropic_max_token_length = 200000
 
 function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
 	print("Calling Anthropic: ", opts.model)
@@ -255,7 +254,6 @@ end
 
 local openai_messages = {}
 local openai_count = 0
-local openai_max_input_tokens = 126000
 
 function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	print("Calling OpenAI: ", opts.model)
@@ -458,6 +456,11 @@ local function get_prompt(opts)
 				.. prompt
 				.. "\nONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IN PROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY."
 			vim.api.nvim_command("normal! d")
+			local bufnr = vim.api.nvim_get_current_buf()
+			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
+			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "" })
+			vim.api.nvim_win_set_cursor(0, { line, 0 })
+			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
 		elseif opts.code_chat then
 			local bufnr = vim.api.nvim_get_current_buf()
 			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
