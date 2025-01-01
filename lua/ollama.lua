@@ -28,6 +28,20 @@ function M.code()
 		system_prompt = prompts.code_prompt,
 		replace = true,
 		code_chat = false,
+		all_buffers = false,
+		context = false,
+		framework = FRAMEWORK,
+	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)
+end
+
+function M.code_all_buf()
+	llm.invoke_llm_and_stream_into_editor({
+		url = OLLAMA_URL,
+		model = OLLAMA_MODEL_CODE,
+		system_prompt = prompts.code_prompt,
+		replace = true,
+		code_chat = false,
+		all_buffers = true,
 		context = false,
 		framework = FRAMEWORK,
 	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)
@@ -38,8 +52,22 @@ function M.code_chat()
 		url = OLLAMA_URL,
 		model = OLLAMA_MODEL_CODE,
 		system_prompt = prompts.code_prompt,
-		replace = true,
+		replace = false,
 		code_chat = true,
+		all_buffers = false,
+		context = false,
+		framework = FRAMEWORK,
+	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)
+end
+
+function M.code_chat_all_buf()
+	llm.invoke_llm_and_stream_into_editor({
+		url = OLLAMA_URL,
+		model = OLLAMA_MODEL_CODE,
+		system_prompt = prompts.code_prompt,
+		replace = false,
+		code_chat = true,
+		all_buffers = true,
 		context = false,
 		framework = FRAMEWORK,
 	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)

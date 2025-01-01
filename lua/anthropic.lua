@@ -16,6 +16,7 @@ function M.invoke()
 		system_prompt = prompts.system_prompt,
 		replace = false,
 		code_chat = false,
+		all_buffers = false,
 		framework = FRAMEWORK,
 	}, llm.make_anthropic_spec_curl_args, llm.handle_anthropic_spec_data)
 end
@@ -28,6 +29,20 @@ function M.code()
 		system_prompt = prompts.code_prompt,
 		replace = true,
 		code_chat = false,
+		all_buffers = false,
+		framework = FRAMEWORK,
+	}, llm.make_anthropic_spec_curl_args, llm.handle_anthropic_spec_data)
+end
+
+function M.code_all_buf()
+	llm.invoke_llm_and_stream_into_editor({
+		url = ANTHROPIC_URL,
+		model = models.anthropic,
+		api_key_name = ANTHROPIC_API_KEY_NAME,
+		system_prompt = prompts.code_prompt,
+		replace = true,
+		code_chat = false,
+		all_buffers = true,
 		framework = FRAMEWORK,
 	}, llm.make_anthropic_spec_curl_args, llm.handle_anthropic_spec_data)
 end
@@ -40,6 +55,20 @@ function M.code_chat()
 		system_prompt = prompts.code_prompt,
 		replace = false,
 		code_chat = true,
+		all_buffers = false,
+		framework = FRAMEWORK,
+	}, llm.make_anthropic_spec_curl_args, llm.handle_anthropic_spec_data)
+end
+
+function M.code_chat_all_buf()
+	llm.invoke_llm_and_stream_into_editor({
+		url = ANTHROPIC_URL,
+		model = models.anthropic,
+		api_key_name = ANTHROPIC_API_KEY_NAME,
+		system_prompt = prompts.code_prompt,
+		replace = false,
+		code_chat = true,
+		all_buffers = true,
 		framework = FRAMEWORK,
 	}, llm.make_anthropic_spec_curl_args, llm.handle_anthropic_spec_data)
 end

@@ -97,7 +97,7 @@ local excluded_extensions = {
 }
 
 -- Function to check if a file should be excluded
-local function should_exclude_file(filename)
+local function should_include_file(filename)
 	-- Check for specific files to exclude
 	if filename == "chat.md" or filename == "notes.md" then
 		return true
@@ -108,36 +108,45 @@ local function should_exclude_file(filename)
 	if extension then
 		for _, excluded_ext in ipairs(excluded_extensions) do
 			if excluded_ext:sub(2) == extension then
-				return true
+				return false
 			end
 		end
 	end
-	return false
+	return true
 end
 
-local function get_all_buffers_text()
-	local buffers = vim.api.nvim_list_bufs()
+local function get_all_buffers_text(opts)
 	local all_text = {}
+	if opts.all_buffers then
+		local buffers = vim.api.nvim_list_bufs()
 
-	for _, buf in ipairs(buffers) do
-		if vim.api.nvim_buf_is_loaded(buf) then
-			local filename = vim.api.nvim_buf_get_name(buf)
-			--if not should_exclude_file(filename) then
-			local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+		for _, buf in ipairs(buffers) do
+			if vim.api.nvim_buf_is_loaded(buf) then
+				local filename = vim.api.nvim_buf_get_name(buf)
+				if should_include_file(filename) then
+					local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
-			-- Add filename as the first line
-			table.insert(all_text, "File: " .. filename)
+					-- Add filename as the first line
+					table.insert(all_text, "File: " .. filename)
 
-			-- Add buffer content
-			local buffer_text = table.concat(lines, "\n")
-			table.insert(all_text, buffer_text)
+					-- Add buffer content
+					local buffer_text = table.concat(lines, "\n")
+					table.insert(all_text, buffer_text)
 
-			-- Add a separator between buffers
-			table.insert(all_text, "\n---\n")
-			--end
+					-- Add a separator between buffers
+					table.insert(all_text, "\n---\n")
+				end
+			end
 		end
+	else
+		local buf = vim.api.nvim_get_current_buf()
+		local filename = vim.api.nvim_buf_get_name(buf)
+		local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+		local buffer_text = table.concat(lines, "\n")
+		table.insert(all_text, "File: " .. filename)
+		table.insert(all_text, all_text, buffer_text)
+		table.insert(all_text, "\n---\n")
 	end
-
 	return table.concat(all_text, "\n")
 end
 
@@ -443,10 +452,10 @@ local function get_prompt(opts)
 	if visual_lines then
 		prompt = table.concat(visual_lines, "\n")
 		if replace then
-			local window_text = get_all_buffers_text()
+			local window_text = get_all_buffers_text(opts)
 			prompt = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE. I will first give you the coding context that I am working in and then the prompt. The coding context is there to give you an idea of waht the program is and what variables I am currently using. Here is the context: \n"
 				.. window_text
-				.. "# Here is the prompt: \n"
+				.. "# User prompt: \n"
 				.. prompt
 				.. "\nONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IN PROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY."
 			vim.api.nvim_command("normal! d")
@@ -457,8 +466,8 @@ local function get_prompt(opts)
 			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
 			vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
-			local window_text = get_all_buffers_text()
-			local prompt = "# You are a highly knowledgeable coding assistant. I will give you the current code context and you will answer my questions with this context to help guide you. \n\n # Code Context: \n"
+			local window_text = get_all_buffers_text(opts)
+			prompt = "# You are a highly knowledgeable coding assistant. I will give you the current code context and you will answer my questions with this context to help guide you. \n\n # Code Context: \n"
 				.. window_text
 				.. "\n\n# User question: \n"
 				.. prompt
