@@ -143,8 +143,13 @@ local function get_all_buffers_text(opts)
 			end
 		end
 	else
-		local buf = vim.api.nvim_get_current_buf()
-		process_buffer(buf)
+		if opts.own_buffer then
+			-- Get the current window buffer
+			-- Seems important but I think I'm going to t
+			local buf = vim.api.nvim_get_current_buf()
+			process_buffer(buf)
+		end
+		return table.concat(all_text, "")
 	end
 	return table.concat(all_text, "\n")
 end
@@ -449,24 +454,23 @@ local function get_prompt(opts)
 	if visual_lines then
 		prompt = table.concat(visual_lines, "\n")
 		if replace then
-			local window_text = get_all_buffers_text(opts)
-			prompt = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE. I will first give you the coding context that I am working in and then the prompt. The coding context is there to give you an idea of waht the program is and what variables I am currently using. Here is the context: \n"
-				.. window_text
-				.. "# User prompt: \n"
-				.. prompt
-				.. "\nONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IN PROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY."
+			--local buffer_text = get_all_buffers_text(opts)
+			--prompt = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE. I will first give you the coding context that I am working in and then the prompt. The coding context is there to give you an idea of what the program is and what variables I am currently using. Here is the context: \n"
+			--	.. window_text
+			--	.. "# User prompt: \n"
+			--	.. prompt
+			--	.. "\nONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IN PROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY."
 			-- Delete the visual selection
+			prompt = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE.\nONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE A CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IMPROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY.\n\nHere is your prompt:\n"
+				.. prompt
 			vim.api.nvim_command("normal! d")
-
 			-- Get current buffer and cursor position
 			local bufnr = vim.api.nvim_get_current_buf()
 			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-
 			-- Create a new line above the current position
 			vim.api.nvim_buf_set_lines(bufnr, line - 1, line - 1, false, { "" })
-
 			-- Move cursor to the beginning of the new line
-			vim.api.nvim_win_set_cursor(0, { line, 0 })
+			vim.api.nvim_win_set_cursor(0, { line - 1, 0 })
 
 			-- Enter normal mode
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
@@ -477,9 +481,9 @@ local function get_prompt(opts)
 			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
 			vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
-			local window_text = get_all_buffers_text(opts)
+			local buffer_text = get_all_buffers_text(opts)
 			prompt = "# You are a highly knowledgeable coding assistant. I will give you the current code context and you will answer my questions with this context to help guide you. \n\n # Code Context: \n"
-				.. window_text
+				.. buffer_text
 				.. "\n\n# User question: \n"
 				.. prompt
 		else
