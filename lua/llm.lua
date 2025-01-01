@@ -144,7 +144,7 @@ local function get_all_buffers_text(opts)
 		local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 		local buffer_text = table.concat(lines, "\n")
 		table.insert(all_text, "File: " .. filename)
-		table.insert(all_text, all_text, buffer_text)
+		table.insert(all_text, buffer_text)
 		table.insert(all_text, "\n---\n")
 	end
 	return table.concat(all_text, "\n")
