@@ -463,14 +463,15 @@ local function get_prompt(opts)
 			-- Delete the visual selection
 			prompt = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE.\nONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE A CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IMPROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY.\n\nHere is your prompt:\n"
 				.. prompt
+
 			vim.api.nvim_command("normal! d")
 			-- Get current buffer and cursor position
 			local bufnr = vim.api.nvim_get_current_buf()
 			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
 			-- Create a new line above the current position
-			vim.api.nvim_buf_set_lines(bufnr, line - 1, line + 1, false, { "" })
+			vim.api.nvim_buf_set_lines(bufnr, line - 1, line - 1, false, { "", "", "" })
 			-- Move cursor to the beginning of the new line
-			vim.api.nvim_win_set_cursor(0, { line, 0 })
+			vim.api.nvim_win_set_cursor(0, { line + 1, 0 })
 
 			-- Enter normal mode
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
