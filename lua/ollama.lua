@@ -3,7 +3,7 @@ local prompts = require("prompts")
 local models = require("models")
 
 local OLLAMA_URL = "http://localhost:11434/api/generate"
-local OLLAMA_MODEL_CODE = "codellama:70b-code"
+local OLLAMA_MODEL_CODE = "deepseek-coder-v2"
 local OLLAMA_MODEL_EN2CH = "yi:34b"
 local FRAMEWORK = "OLLAMA"
 
