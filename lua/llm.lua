@@ -231,7 +231,7 @@ function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
 			messages = message,
 			model = opts.model,
 			max_tokens = 1024,
-			stream = true,
+			stream = false,
 		}
 		for _, v in pairs(message) do
 			table.insert(anthropic_messages, v)
@@ -244,7 +244,7 @@ function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
 			messages = anthropic_messages,
 			model = opts.model,
 			max_tokens = 1024,
-			stream = true,
+			stream = false,
 		}
 	end
 
