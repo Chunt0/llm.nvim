@@ -117,35 +117,34 @@ end
 
 local function get_all_buffers_text(opts)
 	local all_text = {}
+	local function process_buffer(buf)
+		local filename = vim.api.nvim_buf_get_name(buf)
+		if should_include_file(filename) then
+			local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
+			-- Add filename as the first line
+			table.insert(all_text, "File: " .. filename)
+
+			-- Add buffer content
+			local buffer_text = table.concat(lines, "\n")
+			table.insert(all_text, buffer_text)
+
+			-- Add a separator between buffers
+			table.insert(all_text, "\n---\n")
+		end
+	end
+
 	if opts.all_buffers then
 		local buffers = vim.api.nvim_list_bufs()
 
 		for _, buf in ipairs(buffers) do
 			if vim.api.nvim_buf_is_loaded(buf) then
-				local filename = vim.api.nvim_buf_get_name(buf)
-				if should_include_file(filename) then
-					local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-
-					-- Add filename as the first line
-					table.insert(all_text, "File: " .. filename)
-
-					-- Add buffer content
-					local buffer_text = table.concat(lines, "\n")
-					table.insert(all_text, buffer_text)
-
-					-- Add a separator between buffers
-					table.insert(all_text, "\n---\n")
-				end
+				process_buffer(buf)
 			end
 		end
 	else
 		local buf = vim.api.nvim_get_current_buf()
-		local filename = vim.api.nvim_buf_get_name(buf)
-		local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-		local buffer_text = table.concat(lines, "\n")
-		table.insert(all_text, "File: " .. filename)
-		table.insert(all_text, buffer_text)
-		table.insert(all_text, "\n---\n")
+		process_buffer(buf)
 	end
 	return table.concat(all_text, "\n")
 end
