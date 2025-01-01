@@ -55,7 +55,7 @@ function M.code_chat()
 		replace = false,
 		code_chat = true,
 		all_buffers = false,
-		context = false,
+		context = true,
 		framework = FRAMEWORK,
 	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)
 end
@@ -68,7 +68,7 @@ function M.code_chat_all_buf()
 		replace = false,
 		code_chat = true,
 		all_buffers = true,
-		context = false,
+		context = true,
 		framework = FRAMEWORK,
 	}, llm.make_ollama_spec_curl_args, llm.handle_ollama_spec_data)
 end
