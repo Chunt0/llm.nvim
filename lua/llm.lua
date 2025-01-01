@@ -455,13 +455,20 @@ local function get_prompt(opts)
 				.. "# User prompt: \n"
 				.. prompt
 				.. "\nONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IN PROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY."
-			vim.api.nvim_command("normal! d") -- Delete the current line
+			-- Delete the visual selection
+			vim.api.nvim_command("normal! d")
+
+			-- Get current buffer and cursor position
 			local bufnr = vim.api.nvim_get_current_buf()
 			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-			for i = 1, 3 do
-				vim.api.nvim_buf_set_lines(bufnr, line - 2 + i, line - 2 + i, false, { "" }) -- Create three new lines above the current cursor position
-			end
-			vim.api.nvim_win_set_cursor(0, { line - 3, 0 }) -- Move the cursor to two lines above
+
+			-- Create a new line above the current position
+			vim.api.nvim_buf_set_lines(bufnr, line - 1, line - 1, false, { "" })
+
+			-- Move cursor to the beginning of the new line
+			vim.api.nvim_win_set_cursor(0, { line, 0 })
+
+			-- Enter normal mode
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
 		elseif opts.code_chat then
 			local bufnr = vim.api.nvim_get_current_buf()
