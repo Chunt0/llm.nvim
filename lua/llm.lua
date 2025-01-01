@@ -469,9 +469,9 @@ local function get_prompt(opts)
 			local bufnr = vim.api.nvim_get_current_buf()
 			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
 			-- Create a new line above the current position
-			vim.api.nvim_buf_set_lines(bufnr, line - 1, line - 1, false, { "", "", "" })
+			vim.api.nvim_buf_set_lines(bufnr, line - 1, line - 1, false, { "" })
 			-- Move cursor to the beginning of the new line
-			vim.api.nvim_win_set_cursor(0, { line + 1, 0 })
+			vim.api.nvim_win_set_cursor(0, { line, 0 })
 
 			-- Enter normal mode
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
