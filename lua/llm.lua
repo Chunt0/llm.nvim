@@ -442,7 +442,7 @@ local function write_string_at_cursor(str)
 
 		local num_lines = #lines
 		local last_line_length = #lines[num_lines]
-		vim.api.nvim_win_set_cursor(current_window, { row + num_lines - 1, col + last_line_length })
+		vim.api.nvim_win_set_cursor(current_window, { row + num_lines - 1, col + last_line_length + 1 })
 	end)
 end
 
@@ -546,15 +546,12 @@ function M.handle_openai_spec_data(data_stream)
 	end
 end
 
-local count = 1
 function M.handle_dalle_spec_data(data_stream)
-	print(count)
-	count = count + 1
-	print(data_stream)
 	if data_stream:match('"url":') then
 		local content = data_stream:match('"url": "(https://[^"]+)"')
 		write_string_at_cursor(content)
 		assistant_message = { role = "assistant", content = content }
+		table.insert(openai_messages, assistant_message)
 	end
 end
 
