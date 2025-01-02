@@ -13,7 +13,7 @@ function M.invoke()
 	llm.invoke_llm_and_stream_into_editor({
 		url = OLLAMA_URL,
 		model = models.ollama,
-		system_prompt = prompts.prompt,
+		system_prompt = prompts.system_prompt,
 		replace = false,
 		code_chat = false,
 		context = true,
