@@ -9,10 +9,12 @@ local assistant_message = nil
 local anthropic_messages = {}
 local anthropic_count = 0
 local anthropic_assistant_response = ""
+local anthropic_session_cost = 0
 
 local openai_messages = {}
 local openai_count = 0
 local openai_assistant_response = ""
+local openai_session_cost = 0
 
 local ollama_assistant_response = ""
 
@@ -41,8 +43,7 @@ function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
 		for _, v in pairs(message) do
 			table.insert(anthropic_messages, v)
 		end
-		anthropic_count = 1
-	elseif anthropic_count == 1 then
+	elseif anthropic_count > 0 then
 		local next_message = { role = "user", content = prompt }
 		table.insert(anthropic_messages, next_message)
 		data = {
@@ -52,7 +53,7 @@ function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
 			stream = true,
 		}
 	end
-
+	anthropic_count = anthropic_count + 1
 	local args = { "-N", "-X", "POST", "-H", "content-type: application/json", "-d", vim.json.encode(data) }
 	table.insert(args, "-H")
 	table.insert(args, "x-api-key: " .. api_key)
@@ -77,6 +78,8 @@ function M.handle_anthropic_spec_data(data_stream, event_state)
 	end
 end
 
+function M.calculate_anthropic_session_cost(input_tokens, output_tokens) end
+
 ------------------------------------- OpenAI -----------------------------------
 function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	print("Calling OpenAI: ", opts.model)
@@ -96,8 +99,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 		for _, v in pairs(message) do
 			table.insert(openai_messages, v)
 		end
-		openai_count = 1
-	elseif openai_count == 1 then
+	elseif openai_count > 0 then
 		local next_message = { role = "user", content = prompt }
 		table.insert(openai_messages, next_message)
 		data = {
@@ -109,7 +111,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 			top_p = opts.top_p,
 		}
 	end
-
+	openai_count = openai_count + 1
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	if api_key then
 		table.insert(args, "-H")
@@ -165,6 +167,8 @@ function M.handle_dalle_spec_data(data_stream)
 	end
 end
 
+function M.calculate_openai_session_cost(input_tokens, output_tokens) end
+
 ------------------------------------- Groq -------------------------------------
 function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
 	print("Calling Groq: ", opts.model)
@@ -184,8 +188,7 @@ function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
 		for _, v in pairs(message) do
 			table.insert(groq_messages, v)
 		end
-		groq_count = 1
-	elseif groq_count == 1 then
+	elseif groq_count > 0 then
 		local next_message = { role = "user", content = prompt }
 		table.insert(groq_messages, next_message)
 		data = {
@@ -197,7 +200,7 @@ function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
 			top_p = opts.top_p,
 		}
 	end
-
+	groq_count = groq_count + 1
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	if api_key then
 		table.insert(args, "-H")
@@ -244,8 +247,7 @@ function M.make_perplexity_spec_curl_args(opts, prompt, system_prompt)
 		for _, v in pairs(message) do
 			table.insert(perplexity_messages, v)
 		end
-		perplexity_count = 1
-	elseif perplexity_count == 1 then
+	elseif perplexity_count > 0 then
 		local next_message = { role = "user", content = prompt }
 		table.insert(perplexity_messages, next_message)
 		data = {
@@ -257,7 +259,7 @@ function M.make_perplexity_spec_curl_args(opts, prompt, system_prompt)
 			top_p = opts.top_p,
 		}
 	end
-
+	perplexity_count = perplexity_count + 1
 	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	if api_key then
 		table.insert(args, "-H")

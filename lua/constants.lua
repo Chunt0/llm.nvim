@@ -2,9 +2,21 @@ return {
 	models = {
 		perplexity = "llama-3.1-sonar-large-128k-chat",
 		openai = "gpt-4o-mini",
-		anthropic = "claude-3-5-sonnet-latest",
+		anthropic = "claude-3-5-haiku-latest",
 		groq = "llama-3.3-70b-versatile",
 		ollama = "llama3.3:latest",
+	},
+	price = {
+		openai = {
+			gpt_4o = { name = "gpt-4o", input = 2.5, output = 10.0 },
+			gpt_4o_mini = { name = "gpt-4o-mini", input = 0.15, output = 0.6 },
+		},
+		anthropic = {
+			haiku = { name = "claude-3-5-haiku-latest", input = 0.8, output = 4.0 },
+			sonnet = { name = "claude-3-5-sonnet-latest", input = 3.0, output = 15.0 },
+		},
+		perplexity = {},
+		groq = {},
 	},
 	api_endpoints = {
 		anthropic = "https://api.anthropic.com/v1/messages",
