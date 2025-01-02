@@ -175,7 +175,7 @@ function M.get_prompt(opts)
 			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
 			vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
-			local buffer_text = get_all_buffers_text(opts)
+			local buffer_text = M.get_all_buffers_text(opts)
 			prompt = "# You are a highly knowledgeable coding assistant. I will give you the current code context and you will answer my questions with this context to help guide you. \n\n # Code Context: \n"
 				.. buffer_text
 				.. "\n\n# User question: \n"
