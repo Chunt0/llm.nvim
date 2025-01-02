@@ -735,4 +735,32 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 	return active_job
 end
 
+function M.reset_message_buffers()
+	-- Reset Anthropic messages
+	anthropic_messages = {}
+	anthropic_count = 0
+	anthropic_assistant_response = ""
+
+	-- Reset OpenAI messages
+	openai_messages = {}
+	openai_count = 0
+	openai_assistant_response = ""
+
+	-- Reset Groq messages
+	groq_messages = {}
+	groq_count = 0
+	groq_assistant_response = ""
+
+	-- Reset Perplexity messages
+	perplexity_messages = {}
+	perplexity_count = 0
+	perplexity_assistant_response = ""
+
+	-- Reset Ollama context
+	context = {}
+	ollama_assistant_response = ""
+
+	-- Optional: Log the reset action
+	vim.notify("All LLM message buffers have been reset", vim.log.levels.INFO)
+end
 return M
