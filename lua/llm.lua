@@ -336,6 +336,9 @@ local active_job = nil
 function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
 	vim.api.nvim_clear_autocmds({ group = group })
 	local prompt = Utils.get_prompt(opts)
+	if not prompt then
+		return
+	end
 	local replace = opts.replace
 	local framework = opts.framework
 	local model = opts.model

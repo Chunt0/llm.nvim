@@ -142,7 +142,7 @@ end
 function M.get_prompt(opts)
 	local replace = opts.replace
 	local visual_lines = M.get_visual_selection()
-	local prompt = ""
+	local prompt = nil
 
 	if visual_lines then
 		prompt = table.concat(visual_lines, "\n")
@@ -189,12 +189,7 @@ function M.get_prompt(opts)
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
 		end
 	else
-		prompt = M.get_lines_until_cursor()
-		local bufnr = vim.api.nvim_get_current_buf()
-		local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-		local agent_line = "---------------------------Agent---------------------------"
-		vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
-		vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
+		print("ERROR: YOU MUST HIGHLIGHT THE PROMPT YOU WISH TO SEND!")
 	end
 
 	return prompt
