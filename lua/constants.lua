@@ -41,6 +41,150 @@ return {
 		frequency_penalty = nil,
 		max_tokens = nil,
 	},
+	included_extensions = {
+		".py",
+		".pyc",
+		".pyd",
+		".pyo",
+		".pyw",
+		".pyx", -- Python variants
+		".js",
+		".ts",
+		".jsx",
+		".tsx",
+		".mjs",
+		".cjs", -- JavaScript and TypeScript
+		".java",
+		".kt",
+		".scala",
+		".groovy",
+		".jav", -- Java family
+		".cpp",
+		".c",
+		".h",
+		".hpp",
+		".hxx",
+		".cxx",
+		".cc", -- C/C++
+		".php",
+		".phtml",
+		".phar",
+		".phps", -- PHP
+		".html",
+		".htm",
+		".xhtml",
+		".jsp", -- HTML
+		".css",
+		".scss",
+		".less",
+		".sass",
+		".stylus", -- Styling
+		".rb",
+		".erb",
+		".rhtml",
+		".ru", -- Ruby
+		".swift",
+		".m",
+		".mm", -- Swift and Objective-C
+		".go",
+		".mod",
+		".sum", -- Go
+		".json",
+		".jsonc",
+		".geojson",
+		".topojson", -- JSON
+		".xml",
+		".xsd",
+		".rdf",
+		".rss", -- XML
+		".sql",
+		".ddl",
+		".dml", -- SQL
+		".sh",
+		".bash",
+		".zsh",
+		".fish",
+		".csh", -- Shell scripts
+		".pl",
+		".pm",
+		".t",
+		".pod", -- Perl
+		".r",
+		".rmd",
+		".rmarkdown", -- R
+		".dart", -- Dart
+		".lua",
+		".rockspec", -- Lua
+		".md",
+		".markdown",
+		".mdown",
+		".mkdn", -- Markdown
+		".txt",
+		".log",
+		".text", -- Text files
+		".yml",
+		".yaml",
+		".eyaml", -- YAML
+		".csv",
+		".tsv", -- CSV and Tab-Separated Values
+		".config",
+		".ini",
+		".cfg",
+		".conf", -- Config files
+		".toml", -- TOML
+		".bat",
+		".cmd",
+		".ps1", -- Windows batch and PowerShell
+		".psm1",
+		".psd1", -- PowerShell modules
+		".asm",
+		".s",
+		".nasm",
+		".asm", -- Assembly
+		".vue",
+		".svelte",
+		".angular", -- Frontend frameworks
+		".erl",
+		".hrl", -- Erlang
+		".clj",
+		".cljs",
+		".cljc", -- Clojure
+		".groovy",
+		".gvy",
+		".gradle", -- Groovy
+		".coffee",
+		".litcoffee", -- CoffeeScript
+		".rs",
+		".rlib", -- Rust
+		".hs",
+		".lhs", -- Haskell
+		".ex",
+		".exs", -- Elixir
+		".elm", -- Elm
+		".nim",
+		".nims", -- Nim
+		".fsx",
+		".fs",
+		".fsi", -- F# script
+		".ml",
+		".mli",
+		".mll",
+		".mly", -- OCaml
+		".proto", -- Protocol Buffers
+		".graphql",
+		".gql", -- GraphQL
+		".dockerfile", -- Docker
+		".tf",
+		".tfvars", -- Terraform
+		".wasm", -- WebAssembly
+		".ipynb", -- Jupyter Notebook
+		".sol", -- Solidity
+		".zig", -- Zig
+		".tcl", -- Tcl
+		".vb", -- Visual Basic
+		".pl1",
+		".pli", -- PL/I
+	},
 	excluded_extensions = {
 		-- Configuration files
 		".env",

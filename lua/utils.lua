@@ -28,13 +28,13 @@ function M.should_include_file(filename)
 	-- Check file extension
 	local extension = filename:match("%.([^%.]+)$")
 	if extension then
-		for _, excluded_ext in ipairs(Constants.excluded_extensions) do
+		for _, excluded_ext in ipairs(Constants.included_extensions) do
 			if excluded_ext:sub(2) == extension then
-				return false
+				return true
 			end
 		end
 	end
-	return true
+	return false
 end
 
 function M.get_all_buffers_text(opts)
