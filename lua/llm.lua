@@ -431,6 +431,7 @@ end
 
 local function write_string_at_cursor(str)
 	vim.schedule(function()
+		print(str)
 		local current_window = vim.api.nvim_get_current_win()
 		local cursor_position = vim.api.nvim_win_get_cursor(current_window)
 		local row, col = cursor_position[1], cursor_position[2]
