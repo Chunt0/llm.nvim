@@ -22,7 +22,7 @@ end
 function M.should_include_file(filename)
 	-- Check for specific files to exclude
 	if filename == "chat.md" or filename == "notes.md" then
-		return true
+		return false
 	end
 
 	-- Check file extension
