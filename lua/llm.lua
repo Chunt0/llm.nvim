@@ -431,7 +431,6 @@ end
 
 local function write_string_at_cursor(str)
 	vim.schedule(function()
-		print(str)
 		local current_window = vim.api.nvim_get_current_win()
 		local cursor_position = vim.api.nvim_win_get_cursor(current_window)
 		local row, col = cursor_position[1], cursor_position[2]
@@ -443,7 +442,12 @@ local function write_string_at_cursor(str)
 
 		local num_lines = #lines
 		local last_line_length = #lines[num_lines]
-		vim.api.nvim_win_set_cursor(current_window, { row + num_lines - 1, col + last_line_length + 1 })
+
+		-- Adjust cursor position to be at the end of the inserted text
+		vim.api.nvim_win_set_cursor(
+			current_window,
+			{ row + num_lines - 1, (num_lines > 1 and last_line_length or col + last_line_length) }
+		)
 	end)
 end
 
