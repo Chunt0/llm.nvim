@@ -17,43 +17,46 @@ local function start_anchor()
 	stream_anchor = { bufnr = bufnr, id = id }
 end
 
+-- drop-in replacement for append_at_anchor
 local function append_at_anchor(txt)
-	if not stream_anchor or not txt or txt == "" then
+	if not txt or txt == "" then
 		return
 	end
 	txt = txt:gsub("[\r\b]", "")
 
-	-- capture a stable snapshot of the anchor for this write
-	local sa = { bufnr = stream_anchor.bufnr, id = stream_anchor.id }
+	-- snapshot anchor (stream_anchor might change/clear later)
+	local sa = stream_anchor and { bufnr = stream_anchor.bufnr, id = stream_anchor.id } or nil
 
 	vim.schedule(function()
-		-- if the anchor was cleared after we scheduled, bail safely
-		if not sa or not sa.bufnr or not sa.id then
-			return
-		end
-		if not vim.api.nvim_buf_is_loaded(sa.bufnr) then
-			return
+		-- if anchor disappeared, recreate one at the current cursor in the current buffer
+		if not sa or not sa.bufnr or not sa.id or not vim.api.nvim_buf_is_loaded(sa.bufnr) then
+			local bufnr = vim.api.nvim_get_current_buf()
+			local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+			local id = vim.api.nvim_buf_set_extmark(bufnr, NS, row - 1, col, { right_gravity = false })
+			stream_anchor = { bufnr = bufnr, id = id }
+			sa = { bufnr = bufnr, id = id }
 		end
 
+		-- try to get the current position of the extmark; if missing, put it at end-of-buffer
 		local ok_pos, pos = pcall(vim.api.nvim_buf_get_extmark_by_id, sa.bufnr, NS, sa.id, {})
-		if not ok_pos or not pos or pos[1] == nil then
-			return
+		local row, col
+		if ok_pos and pos and pos[1] ~= nil then
+			row, col = pos[1], pos[2]
+		else
+			local last_row = vim.api.nvim_buf_line_count(sa.bufnr) - 1
+			local last_col = #vim.api.nvim_buf_get_lines(sa.bufnr, last_row, last_row + 1, false)[1]
+			row, col = last_row, last_col
+			-- re-create the mark at EOF so subsequent writes have a stable spot
+			pcall(vim.api.nvim_buf_set_extmark, sa.bufnr, NS, row, col, { id = sa.id, right_gravity = false })
 		end
 
-		local row, col = pos[1], pos[2]
 		local lines = vim.split(txt, "\n", { plain = true })
-
-		-- insert text
 		pcall(vim.api.nvim_buf_set_text, sa.bufnr, row, col, row, col, lines)
 
-		-- move the extmark to the new end
 		local last = lines[#lines]
 		local new_row = row + (#lines - 1)
 		local new_col = (#lines == 1) and (col + #last) or #last
-		pcall(vim.api.nvim_buf_set_extmark, sa.bufnr, NS, new_row, new_col, {
-			id = sa.id,
-			right_gravity = false,
-		})
+		pcall(vim.api.nvim_buf_set_extmark, sa.bufnr, NS, new_row, new_col, { id = sa.id, right_gravity = false })
 	end)
 end
 
