@@ -1,56 +1,7 @@
--- llm.lua
 local M = {}
 local Job = require("plenary.job")
 local Log = require("log")
 local Utils = require("utils")
-
--------------------------------- Stream insertion anchor (fix token-at-cursor drift) ----------
-local NS = vim.api.nvim_create_namespace("LLMStream")
-local stream_anchor = nil
-
-local function start_anchor()
-	local bufnr = vim.api.nvim_get_current_buf()
-	local row, col = unpack(vim.api.nvim_win_get_cursor(0)) -- row is 1-indexed
-	local id = vim.api.nvim_buf_set_extmark(bufnr, NS, row - 1, col, {
-		right_gravity = false, -- keep mark on the left side of inserted text
-	})
-	stream_anchor = { bufnr = bufnr, id = id }
-end
-
-local function append_at_anchor(txt)
-	if not stream_anchor or not txt or txt == "" then
-		return
-	end
-	-- sanitize odd control chars that sometimes appear in streams
-	txt = txt:gsub("[\r\b]", "")
-
-	vim.schedule(function()
-		if not vim.api.nvim_buf_is_loaded(stream_anchor.bufnr) then
-			return
-		end
-		local pos = vim.api.nvim_buf_get_extmark_by_id(stream_anchor.bufnr, NS, stream_anchor.id, {})
-		if not pos or pos[1] == nil then
-			return
-		end
-		local row, col = pos[1], pos[2]
-
-		local lines = vim.split(txt, "\n", { plain = true })
-		vim.api.nvim_buf_set_text(stream_anchor.bufnr, row, col, row, col, lines)
-
-		local last = lines[#lines]
-		local new_row = row + (#lines - 1)
-		local new_col = (#lines == 1) and (col + #last) or #last
-
-		vim.api.nvim_buf_set_extmark(stream_anchor.bufnr, NS, new_row, new_col, {
-			id = stream_anchor.id,
-			right_gravity = false,
-		})
-	end)
-end
-
-local function end_anchor()
-	stream_anchor = nil
-end
 
 -------------------------------- Initialize Variables---------------------------
 local assistant_message = nil
@@ -127,7 +78,7 @@ function M.handle_anthropic_spec_data(data_stream, event_state)
 	if event_state == "content_block_delta" then
 		if json.delta and json.delta.text then
 			local content = json.delta.text
-			append_at_anchor(content)
+			Utils.write_string_at_cursor(content)
 			anthropic_assistant_response = anthropic_assistant_response .. content
 		end
 	elseif event_state == "message_stop" then
@@ -223,15 +174,15 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	return args, stream_mode
 end
 
--- Chat Completions (legacy SSE) handler
+-- Chat Completions (legacy SSE) handler (keep existing)
 function M.handle_openai_spec_data(data_stream)
 	if data_stream:match('"delta":') then
-		data_stream = data_stream:gsub("^data:%s*", "")
+		data_stream = data_stream:gsub("^data: ", "")
 		local ok, json = pcall(vim.json.decode, data_stream)
 		if ok and json and json.choices and json.choices[1] and json.choices[1].delta then
 			local content = json.choices[1].delta.content
 			if content then
-				append_at_anchor(content)
+				Utils.write_string_at_cursor(content)
 				openai_assistant_response = openai_assistant_response .. content
 			end
 		end
@@ -251,7 +202,7 @@ function M.handle_openai_responses_data(data_json, event_type)
 
 	if event_type == "response.output_text.delta" then
 		if json.delta then
-			append_at_anchor(json.delta)
+			Utils.write_string_at_cursor(json.delta)
 			openai_assistant_response = openai_assistant_response .. json.delta
 		end
 	elseif event_type == "response.completed" then
@@ -287,7 +238,7 @@ function M.handle_dalle_spec_data(data_stream)
 	if data_stream:match('"url":') then
 		local content = data_stream:match('"url":%s*"(https://[^"]+)"')
 		if content then
-			append_at_anchor(content)
+			Utils.write_string_at_cursor(content)
 			assistant_message = { role = "assistant", content = content }
 			table.insert(openai_messages, assistant_message)
 		end
@@ -339,12 +290,12 @@ end
 
 function M.handle_groq_spec_data(data_stream)
 	if data_stream:match('"delta":') then
-		data_stream = data_stream:gsub("^data:%s*", "")
+		data_stream = data_stream:gsub("^data: ", "")
 		local ok, json = pcall(vim.json.decode, data_stream)
 		if ok and json and json.choices and json.choices[1] and json.choices[1].delta then
 			local content = json.choices[1].delta.content
 			if content then
-				append_at_anchor(content)
+				Utils.write_string_at_cursor(content)
 				groq_assistant_response = groq_assistant_response .. content
 			end
 		end
@@ -396,6 +347,7 @@ function M.make_perplexity_spec_curl_args(opts, prompt, system_prompt)
 	return args, "LEGACY"
 end
 
+-- Hardened SSE handler
 function M.handle_perplexity_spec_data(data_stream)
 	local line = (data_stream or ""):gsub("^%s+", "")
 	if line:match("^data:%s*%[DONE%]%s*$") then
@@ -418,7 +370,7 @@ function M.handle_perplexity_spec_data(data_stream)
 	if json.choices and json.choices[1] and json.choices[1].delta then
 		local content = json.choices[1].delta.content
 		if content then
-			append_at_anchor(content)
+			Utils.write_string_at_cursor(content)
 			perplexity_assistant_response = perplexity_assistant_response .. content
 		end
 	end
@@ -462,7 +414,7 @@ function M.handle_ollama_spec_data(data_stream)
 		local content = json.response
 		if content then
 			ollama_assistant_response = ollama_assistant_response .. content
-			append_at_anchor(content)
+			Utils.write_string_at_cursor(content)
 		end
 	elseif json.done then
 		if json.context and type(json.context) == "table" then
@@ -510,48 +462,17 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 		active_job = nil
 	end
 
-	-- stable insertion point for streaming
-	start_anchor()
+	local curr_event_state = nil
 
-	-- SSE/line buffers
-	local sse_buf = ""
-	local line_buf = ""
-	local function handle_events_stdout(_, out)
-		sse_buf = sse_buf .. out
-		while true do
-			local sep = sse_buf:find("\n\n", 1, true) -- blank line separates SSE blocks
-			if not sep then
-				break
-			end
-			local block = sse_buf:sub(1, sep - 1)
-			sse_buf = sse_buf:sub(sep + 2)
-
-			-- extract event
-			local ev = block:match("\nevent:%s*(.-)\r?\n") or block:match("^event:%s*(.-)\r?\n")
-
-			-- each data line
-			for data in block:gmatch("\ndata:%s*(.-)\r?\n") do
-				if handle_events_fn then
-					handle_events_fn(data, ev)
-				end
-			end
+	local function parse_and_call(line)
+		local event = line:match("^event:%s*(.+)$")
+		if event then
+			curr_event_state = event
+			return
 		end
-	end
-
-	local function handle_legacy_stdout(_, out)
-		line_buf = line_buf .. out
-		local i = 1
-		while true do
-			local j = line_buf:find("\n", i, true)
-			if not j then
-				line_buf = line_buf:sub(i)
-				break
-			end
-			local line = line_buf:sub(i, j - 1)
-			i = j + 1
-			if handle_legacy_fn then
-				handle_legacy_fn(line)
-			end
+		local data_match = line:match("^data:%s*(.+)$")
+		if data_match and handle_events_fn then
+			handle_events_fn(data_match, curr_event_state)
 		end
 	end
 
@@ -575,14 +496,15 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 		Log.log(log_entry)
 		active_job = nil
 		assistant_message = nil
-		end_anchor()
 	end)
 
 	if stream_mode == "EVENTS" then
 		active_job = Job:new({
 			command = "curl",
 			args = args,
-			on_stdout = handle_events_stdout,
+			on_stdout = function(_, out)
+				parse_and_call(out)
+			end,
 			on_stderr = function(_, _) end,
 			on_exit = on_exit_common,
 		})
@@ -590,7 +512,11 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 		active_job = Job:new({
 			command = "curl",
 			args = args,
-			on_stdout = handle_legacy_stdout,
+			on_stdout = function(_, out)
+				if handle_legacy_fn then
+					handle_legacy_fn(out)
+				end
+			end,
 			on_stderr = function(_, _) end,
 			on_exit = on_exit_common,
 		})
@@ -606,7 +532,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 				active_job:shutdown()
 				print("LLM streaming cancelled")
 				active_job = nil
-				end_anchor()
 			end
 		end,
 	})
@@ -641,6 +566,7 @@ function M.reset_message_buffers()
 	context = {}
 	ollama_assistant_response = ""
 
+	-- Optional: Log the reset action
 	vim.notify("All LLM message buffers have been reset", vim.log.levels.INFO)
 end
 
