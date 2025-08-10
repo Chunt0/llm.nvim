@@ -6,7 +6,7 @@ local Log = require("log")
 local Utils = require("utils")
 
 -- ===== Debug =====
-local DEBUG = true
+local DEBUG = false
 local function dbg(msg)
 	if not DEBUG then
 		return
