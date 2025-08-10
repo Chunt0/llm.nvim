@@ -1,18 +1,26 @@
--- llm.lua (OpenAI + Ollama, robust SSE buffering + UTF-8 safe writes + sanity checks)
+-- llm.lua (OpenAI Chat Completions + Ollama only)
+-- Robust SSE buffering, UTF-8 safe writes, anchored insertion, and debug taps.
 local M = {}
 local Job = require("plenary.job")
 local Log = require("log")
 local Utils = require("utils")
 
--- ===== Debug toggle =====
+-- ===== Debug =====
 local DEBUG = true
 local function dbg(msg)
 	if not DEBUG then
 		return
 	end
+	msg = "[llm] " .. tostring(msg)
 	vim.schedule(function()
 		pcall(vim.notify, msg, vim.log.levels.INFO)
 	end)
+	-- also echo to :messages
+	pcall(vim.api.nvim_echo, { { msg, "None" } }, true, {})
+end
+function M.set_debug(on)
+	DEBUG = not not on
+	dbg("DEBUG=" .. tostring(DEBUG))
 end
 
 -------------------------------- Stream insertion anchor (fix token-at-cursor drift) ----------
@@ -29,18 +37,17 @@ local function start_anchor()
 	dbg("Anchor started at row=" .. (row - 1) .. ", col=" .. col)
 end
 
--- drop-in replacement for append_at_anchor
+-- resilient writer that survives anchor clears and buffer switches
 local function append_at_anchor(txt)
 	if not txt or txt == "" then
 		return
 	end
 	txt = txt:gsub("[\r\b]", "")
 
-	-- snapshot anchor (stream_anchor might change/clear later)
 	local sa = stream_anchor and { bufnr = stream_anchor.bufnr, id = stream_anchor.id } or nil
 
 	vim.schedule(function()
-		-- if anchor disappeared, recreate one at the current cursor in the current buffer
+		-- if anchor gone, recreate one at current cursor in the current buffer
 		if not sa or not sa.bufnr or not sa.id or not vim.api.nvim_buf_is_loaded(sa.bufnr) then
 			local bufnr = vim.api.nvim_get_current_buf()
 			local row, col = unpack(vim.api.nvim_win_get_cursor(0))
@@ -50,7 +57,7 @@ local function append_at_anchor(txt)
 			dbg("Anchor recreated at row=" .. (row - 1) .. ", col=" .. col)
 		end
 
-		-- try to get the current position of the extmark; if missing, put it at end-of-buffer
+		-- find current mark; if missing, move to end-of-buffer
 		local ok_pos, pos = pcall(vim.api.nvim_buf_get_extmark_by_id, sa.bufnr, NS, sa.id, {})
 		local row, col
 		if ok_pos and pos and pos[1] ~= nil then
@@ -58,9 +65,7 @@ local function append_at_anchor(txt)
 		else
 			local last_row = vim.api.nvim_buf_line_count(sa.bufnr) - 1
 			local last_line = vim.api.nvim_buf_get_lines(sa.bufnr, last_row, last_row + 1, false)[1] or ""
-			local last_col = #last_line
-			row, col = last_row, last_col
-			-- re-create the mark at EOF so subsequent writes have a stable spot
+			row, col = last_row, #last_line
 			pcall(vim.api.nvim_buf_set_extmark, sa.bufnr, NS, row, col, { id = sa.id, right_gravity = false })
 			dbg("Extmark missing; moved to EOF row=" .. row .. ", col=" .. col)
 		end
@@ -80,7 +85,7 @@ local function end_anchor()
 	dbg("Anchor cleared")
 end
 
--- UTF-8 safe streaming (carry incomplete multi-byte at chunk boundary)
+-- ===== UTF-8 safe streaming (carry incomplete multi-byte at chunk boundary)
 local utf8_carry = ""
 
 local function split_complete_utf8(s)
@@ -89,7 +94,6 @@ local function split_complete_utf8(s)
 	end
 	local len = #s
 	local i = len
-	-- walk back over UTF-8 continuation bytes (10xx xxxx)
 	while i > 0 do
 		local b = s:byte(i)
 		if b < 0x80 or b >= 0xC0 then
@@ -119,9 +123,8 @@ local function write_safely(chunk)
 		utf8_carry = ""
 	end
 	chunk = chunk:gsub("\r\n", "\n"):gsub("[\r\b]", "")
-
 	local complete, tail = split_complete_utf8(chunk)
-	utf8_carry = tail -- keep the incomplete suffix for the next call
+	utf8_carry = tail
 	if complete ~= "" then
 		append_at_anchor(complete)
 	end
@@ -130,101 +133,58 @@ end
 -------------------------------- Initialize Variables---------------------------
 local assistant_message = nil
 
--- OpenAI state
+-- OpenAI (chat/completions) state
 local openai_messages = {}
 local openai_count = 0
 local openai_assistant_response = ""
-local openai_session_cost = 0
 
 -- Ollama state
 local ollama_assistant_response = ""
 local context = {}
 local max_length = 25000
 
--- Models that don't allow sampling controls on the Responses API
-local RESPONSES_NO_SAMPLING = {
-	["gpt-5"] = true,
-}
-
-------------------------------------- OpenAI (AUTO endpoint) -----------------------------------
+------------------------------------- OpenAI (Chat Completions only) -----------------------------------
+-- No Responses endpoint, no temperature/top_p/etc.
 function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
-	print("Calling OpenAI (AUTO): ", opts.model)
+	print("Calling OpenAI (chat.completions): ", opts.model)
 
 	local model = opts.model
-	local url_responses = opts.url_responses or "https://api.openai.com/v1/responses"
 	local url_chat = opts.url_chat or "https://api.openai.com/v1/chat/completions"
 	local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name)
 
-	local have_sampling = (opts.temp ~= nil) or (opts.top_p ~= nil)
-	local use_chat_legacy = RESPONSES_NO_SAMPLING[model] and have_sampling
-
-	local data, url, stream_mode
+	local data
 
 	if openai_count == 0 then
 		local first = {
 			{ role = "system", content = system_prompt },
 			{ role = "user", content = prompt },
 		}
-
-		if use_chat_legacy then
-			data = {
-				model = model,
-				messages = first,
-				stream = true,
-				temperature = opts.temp,
-				top_p = opts.top_p,
-				presence_penalty = opts.presence_penalty,
-			}
-			url = opts.url or url_chat
-			stream_mode = "LEGACY"
-		else
-			data = {
-				model = model,
-				input = first,
-				stream = true,
-			}
-			url = opts.url or url_responses
-			stream_mode = "EVENTS"
-		end
-
+		data = {
+			model = model,
+			messages = first,
+			stream = true,
+		}
 		for _, v in pairs(first) do
 			table.insert(openai_messages, v)
 		end
 	else
 		local next_message = { role = "user", content = prompt }
 		table.insert(openai_messages, next_message)
-
-		if use_chat_legacy then
-			data = {
-				model = model,
-				messages = openai_messages,
-				stream = true,
-				temperature = opts.temp,
-				top_p = opts.top_p,
-				presence_penalty = opts.presence_penalty,
-			}
-			url = opts.url or url_chat
-			stream_mode = "LEGACY"
-		else
-			data = {
-				model = model,
-				input = openai_messages,
-				stream = true,
-			}
-			url = opts.url or url_responses
-			stream_mode = "EVENTS"
-		end
+		data = {
+			model = model,
+			messages = openai_messages,
+			stream = true,
+		}
 	end
 
 	openai_count = openai_count + 1
 
-	-- -sS silences progress meter; -N disables buffering
 	local args = { "-sS", "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	if api_key then
 		table.insert(args, "-H")
 		table.insert(args, "Authorization: Bearer " .. api_key)
 	end
-	table.insert(args, url)
+	table.insert(args, url_chat)
 
 	-- debug: show curl args (redact bearer)
 	do
@@ -238,15 +198,15 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 		dbg("OpenAI curl args: " .. table.concat(shown, " "))
 	end
 
-	return args, stream_mode
+	return args, "LEGACY"
 end
 
--- Chat Completions (legacy SSE) handler (expects one line: "data: {...}")
+-- Chat Completions SSE handler (one line is "data: {...}" or "data: [DONE]")
 function M.handle_openai_spec_data(line)
 	if not line or line == "" then
 		return
 	end
-	dbg("OpenAI LEGACY line: " .. math.min(#line, 120) .. " bytes")
+	dbg("OpenAI LEGACY line: " .. math.min(#line, 160) .. " bytes")
 	if line:match("^data:%s*%[DONE%]") then
 		assistant_message = { role = "assistant", content = openai_assistant_response }
 		table.insert(openai_messages, assistant_message)
@@ -269,32 +229,7 @@ function M.handle_openai_spec_data(line)
 	end
 end
 
--- Responses API (event-typed SSE) handler
-function M.handle_openai_responses_data(data_json, event_type)
-	dbg("OpenAI EVENTS event: " .. tostring(event_type or ""))
-	local ok, json = pcall(vim.json.decode, data_json)
-	if not ok or not json then
-		return
-	end
-
-	if event_type == "response.output_text.delta" then
-		if json.delta then
-			write_safely(json.delta)
-			openai_assistant_response = openai_assistant_response .. json.delta
-		end
-	elseif event_type == "response.completed" then
-		assistant_message = { role = "assistant", content = openai_assistant_response }
-		table.insert(openai_messages, assistant_message)
-		openai_assistant_response = ""
-	elseif event_type == "response.error" then
-		local msg = (json.error and json.error.message) or "unknown"
-		vim.notify("OpenAI error: " .. msg, vim.log.levels.ERROR)
-	end
-end
-
-function M.calculate_openai_session_cost(_input_tokens, _output_tokens) end
-
-------------------------------------- Ollama -------------------------------
+------------------------------------- Ollama -----------------------------------
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 	print("Calling Ollama: ", opts.model)
 	local url = opts.url or "https://ollama.putty-ai.com/api/generate"
@@ -311,7 +246,7 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 	local args = { "-sS", "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	table.insert(args, url)
 
-	-- debug: show curl args
+	-- debug
 	do
 		local shown = {}
 		for _, a in ipairs(args) do
@@ -327,7 +262,7 @@ function M.handle_ollama_spec_data(line)
 	if not line or line == "" then
 		return
 	end
-	dbg("Ollama LEGACY line: " .. math.min(#line, 120) .. " bytes")
+	dbg("Ollama LEGACY line: " .. math.min(#line, 160) .. " bytes")
 	local ok, json = pcall(vim.json.decode, line)
 	if not ok or not json then
 		return
@@ -351,11 +286,57 @@ function M.handle_ollama_spec_data(line)
 	end
 end
 
+-- ===== JSON extractor for concatenated JSON streams (no newlines)
+local function extract_json_objects(buf)
+	local out = {}
+	local i, n = 1, #buf
+	while true do
+		local s = buf:find("{", i, true)
+		if not s then
+			break
+		end
+		local j, depth, in_str, esc = s, 0, false, false
+		while j <= n do
+			local c = buf:sub(j, j)
+			if in_str then
+				if esc then
+					esc = false
+				elseif c == "\\" then
+					esc = true
+				elseif c == '"' then
+					in_str = false
+				end
+			else
+				if c == '"' then
+					in_str = true
+				elseif c == "{" then
+					depth = depth + 1
+				elseif c == "}" then
+					depth = depth - 1
+					if depth == 0 then
+						local json_str = buf:sub(s, j)
+						table.insert(out, json_str)
+						i = j + 1
+						break
+					end
+				end
+			end
+			j = j + 1
+		end
+		if j > n then
+			i = s
+			break
+		end -- incomplete object at end
+	end
+	local remainder = (i <= n) and buf:sub(i) or ""
+	return out, remainder
+end
+
 -------------------------------- Invoke LLM -----------------------------------
 local group = vim.api.nvim_create_augroup("LLM_AutoGroup", { clear = true })
 local active_job = nil
 
-function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_legacy_fn, handle_events_fn)
+function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_legacy_fn, _handle_events_fn)
 	vim.api.nvim_clear_autocmds({ group = group })
 	local prompt = Utils.get_prompt(opts)
 	if not prompt then
@@ -369,9 +350,8 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 		or "Yell at me for not setting my configuration for my llm plugin correctly"
 
 	local args, stream_mode = make_curl_args_fn(opts, prompt, system_prompt)
-	if not stream_mode then
-		stream_mode = "LEGACY"
-	end
+	-- Force legacy mode (we only support chat.completions + ollama)
+	stream_mode = "LEGACY"
 
 	if active_job then
 		active_job:shutdown()
@@ -381,9 +361,8 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 	start_anchor()
 	dbg("Starting job in mode: " .. stream_mode)
 
-	-- === Robust chunk buffers ===
-	local sse_buf = "" -- for EVENTS mode
-	local line_buf = "" -- for LEGACY mode
+	-- === Robust chunk buffer for LEGACY mode
+	local line_buf = ""
 
 	local function normalize_chunk(out)
 		if type(out) == "table" then
@@ -392,66 +371,58 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 		return (out or ""):gsub("\r\n", "\n")
 	end
 
-	local function events_on_stdout(_, out)
-		local chunk = normalize_chunk(out)
-		if chunk == "" then
-			return
-		end
-		dbg("EVENTS chunk: " .. #chunk .. " bytes")
-		sse_buf = sse_buf .. chunk
-
-		-- Split into SSE "blocks" separated by blank lines
-		while true do
-			local sep = sse_buf:find("\n\n", 1, true)
-			if not sep then
-				break
-			end
-			local block = sse_buf:sub(1, sep - 1)
-			sse_buf = sse_buf:sub(sep + 2)
-
-			local curr_event = nil
-			for line in (block .. "\n"):gmatch("([^\n]*)\n") do
-				if line ~= "" then
-					local ev = line:match("^event:%s*(.+)$")
-					if ev then
-						curr_event = ev
-						dbg("EVENTS event: " .. ev)
-					else
-						local data = line:match("^data:%s*(.+)$")
-						if data and handle_events_fn then
-							handle_events_fn(data, curr_event)
-						end
-					end
-				end
-			end
-		end
-	end
-
 	local function legacy_on_stdout(_, out)
 		local chunk = normalize_chunk(out)
 		if chunk == "" then
 			return
 		end
 		dbg("LEGACY chunk: " .. #chunk .. " bytes")
-		line_buf = line_buf .. chunk
 
-		-- Extract complete lines; keep remainder
-		local i = 1
-		while true do
-			local j = line_buf:find("\n", i, true)
-			if not j then
-				line_buf = line_buf:sub(i)
-				break
-			end
-			local line = line_buf:sub(i, j - 1)
-			i = j + 1
-			if handle_legacy_fn then
-				handle_legacy_fn(line)
+		line_buf = line_buf .. chunk
+		local progressed = true
+		while progressed do
+			progressed = false
+
+			-- Case A: newline-delimited lines (OpenAI chat style)
+			local j = line_buf:find("\n", 1, true)
+			if j then
+				local line = line_buf:sub(1, j - 1)
+				line_buf = line_buf:sub(j + 1)
+				if handle_legacy_fn and line ~= "" then
+					handle_legacy_fn(line)
+				end
+				progressed = true
+			else
+				-- Case B: concatenated JSON objects (Ollama style)
+				local objs
+				objs, line_buf = extract_json_objects(line_buf)
+				if #objs > 0 then
+					for _, js in ipairs(objs) do
+						if handle_legacy_fn then
+							handle_legacy_fn(js)
+						end
+					end
+					progressed = true
+				end
 			end
 		end
 	end
 
 	local on_exit_common = vim.schedule_wrap(function()
+		-- Flush any remainder (possibly a complete JSON without newline)
+		if line_buf and line_buf ~= "" then
+			dbg("Flushing remainder from line_buf (" .. #line_buf .. " bytes)")
+			local objs
+			objs, line_buf = extract_json_objects(line_buf)
+			for _, js in ipairs(objs) do
+				if handle_legacy_fn then
+					handle_legacy_fn(js)
+				end
+			end
+			line_buf = ""
+		end
+
+		-- flush any leftover partial utf-8
 		if utf8_carry ~= "" then
 			append_at_anchor(utf8_carry)
 			utf8_carry = ""
@@ -480,33 +451,18 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 		dbg("Job exited")
 	end)
 
-	if stream_mode == "EVENTS" then
-		active_job = Job:new({
-			command = "curl",
-			args = args,
-			on_stdout = events_on_stdout,
-			on_stderr = function(_, err)
-				if err and err ~= "" then
-					dbg("STDERR: " .. err)
-				end
-			end,
-			on_exit = on_exit_common,
-			enable_handlers = true,
-		})
-	else
-		active_job = Job:new({
-			command = "curl",
-			args = args,
-			on_stdout = legacy_on_stdout,
-			on_stderr = function(_, err)
-				if err and err ~= "" then
-					dbg("STDERR: " .. err)
-				end
-			end,
-			on_exit = on_exit_common,
-			enable_handlers = true,
-		})
-	end
+	active_job = Job:new({
+		command = "curl",
+		args = args,
+		on_stdout = legacy_on_stdout,
+		on_stderr = function(_, err)
+			if err and err ~= "" then
+				dbg("STDERR: " .. err)
+			end
+		end,
+		on_exit = on_exit_common,
+		enable_handlers = true,
+	})
 
 	active_job:start()
 
