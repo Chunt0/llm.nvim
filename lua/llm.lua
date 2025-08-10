@@ -1,4 +1,4 @@
--- llm.lua
+-- llm.lua (OpenAI + Ollama only)
 local M = {}
 local Job = require("plenary.job")
 local Log = require("log")
@@ -52,92 +52,76 @@ local function end_anchor()
 	stream_anchor = nil
 end
 
+-- UTF-8 safe streaming (carry incomplete multi-byte at chunk boundary)
+local utf8_carry = ""
+
+local function split_complete_utf8(s)
+	if s == "" then
+		return "", ""
+	end
+	local len = #s
+	local i = len
+	-- walk back over UTF-8 continuation bytes (10xx xxxx)
+	while i > 0 do
+		local b = s:byte(i)
+		if b < 0x80 or b >= 0xC0 then
+			break
+		end
+		i = i - 1
+	end
+	if i == 0 then
+		return "", s
+	end
+	local lead = s:byte(i)
+	local need = (lead < 0xE0 and 1) or (lead < 0xF0 and 2) or (lead < 0xF8 and 3) or 0
+	local have = len - i
+	if have < need then
+		return s:sub(1, i - 1), s:sub(i)
+	else
+		return s, ""
+	end
+end
+
+local function write_safely(chunk)
+	if not chunk or chunk == "" then
+		return
+	end
+	-- prepend any carried tail from previous chunk
+	if utf8_carry ~= "" then
+		chunk = utf8_carry .. chunk
+		utf8_carry = ""
+	end
+	-- normalize newlines early (helps SSE parsing elsewhere)
+	chunk = chunk:gsub("\r\n", "\n")
+	-- strip control chars we don't want
+	chunk = chunk:gsub("[\r\b]", "")
+
+	local complete, tail = split_complete_utf8(chunk)
+	utf8_carry = tail -- keep the incomplete suffix for the next call
+
+	if complete ~= "" then
+		append_at_anchor(complete)
+	end
+end
+
 -------------------------------- Initialize Variables---------------------------
 local assistant_message = nil
 
-local anthropic_messages = {}
-local anthropic_count = 0
-local anthropic_assistant_response = ""
-local anthropic_session_cost = 0
-
+-- OpenAI state
 local openai_messages = {}
 local openai_count = 0
 local openai_assistant_response = ""
 local openai_session_cost = 0
 
+-- Ollama state
 local ollama_assistant_response = ""
-
-local groq_messages = {}
-local groq_count = 0
-local groq_assistant_response = ""
-
-local perplexity_messages = {}
-local perplexity_count = 0
-local perplexity_assistant_response = ""
+local context = {}
+local max_length = 25000
 
 -- Models that don't allow sampling controls on the Responses API
 local RESPONSES_NO_SAMPLING = {
 	["gpt-5"] = true,
 }
-
--------------------------------- Anthropic ---------------------------
-function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
-	print("Calling Anthropic: ", opts.model)
-	local url = opts.url or "https://api.anthropic.com/v1/messages"
-	local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name)
-	local data = nil
-	if anthropic_count == 0 then
-		local message = { { role = "user", content = prompt } }
-		data = {
-			messages = message,
-			model = opts.model,
-			max_tokens = 1024,
-			stream = true,
-			system = system_prompt,
-		}
-		for _, v in pairs(message) do
-			table.insert(anthropic_messages, v)
-		end
-	else
-		local next_message = { role = "user", content = prompt }
-		table.insert(anthropic_messages, next_message)
-		data = {
-			messages = anthropic_messages,
-			model = opts.model,
-			max_tokens = 1024,
-			stream = true,
-			system = system_prompt,
-		}
-	end
-	anthropic_count = anthropic_count + 1
-	local args = { "-N", "-X", "POST", "-H", "content-type: application/json", "-d", vim.json.encode(data) }
-	table.insert(args, "-H")
-	table.insert(args, "x-api-key: " .. api_key)
-	table.insert(args, "-H")
-	table.insert(args, "anthropic-version: 2023-06-01")
-	table.insert(args, url)
-	return args, "EVENTS"
-end
-
-function M.handle_anthropic_spec_data(data_stream, event_state)
-	local ok, json = pcall(vim.json.decode, data_stream)
-	if not ok or not json then
-		return
-	end
-	if event_state == "content_block_delta" then
-		if json.delta and json.delta.text then
-			local content = json.delta.text
-			append_at_anchor(content)
-			anthropic_assistant_response = anthropic_assistant_response .. content
-		end
-	elseif event_state == "message_stop" then
-		assistant_message = { role = "assistant", content = anthropic_assistant_response }
-		table.insert(anthropic_messages, assistant_message)
-		anthropic_assistant_response = ""
-	end
-end
-
-function M.calculate_anthropic_session_cost(input_tokens, output_tokens) end
 
 ------------------------------------- OpenAI (AUTO endpoint) -----------------------------------
 -- Auto-switch between /v1/responses (EVENTS) and /v1/chat/completions (LEGACY)
@@ -176,7 +160,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 				model = model,
 				input = first,
 				stream = true,
-				-- (optional) add temperature/top_p here only for models that support it on Responses
+				-- (optional) temperature/top_p only for models that support it on Responses
 			}
 			url = opts.url or url_responses
 			stream_mode = "EVENTS"
@@ -231,7 +215,7 @@ function M.handle_openai_spec_data(data_stream)
 		if ok and json and json.choices and json.choices[1] and json.choices[1].delta then
 			local content = json.choices[1].delta.content
 			if content then
-				append_at_anchor(content)
+				write_safely(content)
 				openai_assistant_response = openai_assistant_response .. content
 			end
 		end
@@ -251,7 +235,7 @@ function M.handle_openai_responses_data(data_json, event_type)
 
 	if event_type == "response.output_text.delta" then
 		if json.delta then
-			append_at_anchor(json.delta)
+			write_safely(json.delta)
 			openai_assistant_response = openai_assistant_response .. json.delta
 		end
 	elseif event_type == "response.completed" then
@@ -264,177 +248,9 @@ function M.handle_openai_responses_data(data_json, event_type)
 	end
 end
 
-function M.make_dalle_spec_curl_args(opts, prompt)
-	print("Calling OpenAI: DALL-E 3")
-	local url = opts.url or "https://api.openai.com/v1/images/generations"
-	local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name)
-	local data = {
-		model = "dall-e-3",
-		prompt = prompt,
-		n = 1,
-		size = "1024x1024",
-	}
-	local args = { "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
-	if api_key then
-		table.insert(args, "-H")
-		table.insert(args, "Authorization: Bearer " .. api_key)
-	end
-	table.insert(args, url)
-	return args, "LEGACY" -- responses are non-SSE JSON
-end
-
-function M.handle_dalle_spec_data(data_stream)
-	if data_stream:match('"url":') then
-		local content = data_stream:match('"url":%s*"(https://[^"]+)"')
-		if content then
-			append_at_anchor(content)
-			assistant_message = { role = "assistant", content = content }
-			table.insert(openai_messages, assistant_message)
-		end
-	end
-end
-
-function M.calculate_openai_session_cost(input_tokens, output_tokens) end
-
-------------------------------------- Groq -------------------------------------
-function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
-	print("Calling Groq: ", opts.model)
-	local url = opts.url or "https://api.groq.com/openai/v1/chat/completions"
-	local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name)
-	local data
-	if groq_count == 0 then
-		local message = { { role = "system", content = system_prompt }, { role = "user", content = prompt } }
-		data = {
-			messages = message,
-			model = opts.model,
-			temperature = opts.temp,
-			stream = true,
-			presence_penalty = opts.presence_penalty,
-			top_p = opts.top_p,
-		}
-		for _, v in pairs(message) do
-			table.insert(groq_messages, v)
-		end
-	else
-		local next_message = { role = "user", content = prompt }
-		table.insert(groq_messages, next_message)
-		data = {
-			messages = groq_messages,
-			model = opts.model,
-			temperature = opts.temp,
-			stream = true,
-			presence_penalty = opts.presence_penalty,
-			top_p = opts.top_p,
-		}
-	end
-	groq_count = groq_count + 1
-	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
-	if api_key then
-		table.insert(args, "-H")
-		table.insert(args, "Authorization: Bearer " .. api_key)
-	end
-	table.insert(args, url)
-	return args, "LEGACY"
-end
-
-function M.handle_groq_spec_data(data_stream)
-	if data_stream:match('"delta":') then
-		data_stream = data_stream:gsub("^data:%s*", "")
-		local ok, json = pcall(vim.json.decode, data_stream)
-		if ok and json and json.choices and json.choices[1] and json.choices[1].delta then
-			local content = json.choices[1].delta.content
-			if content then
-				append_at_anchor(content)
-				groq_assistant_response = groq_assistant_response .. content
-			end
-		end
-	elseif data_stream:match("%[DONE%]") then
-		assistant_message = { role = "assistant", content = groq_assistant_response }
-		table.insert(groq_messages, assistant_message)
-		groq_assistant_response = ""
-	end
-end
-
-------------------------------------- Perplexity -------------------------------
-function M.make_perplexity_spec_curl_args(opts, prompt, system_prompt)
-	print("Calling Perplexity: ", opts.model)
-	local url = opts.url or "https://api.perplexity.ai/chat/completions"
-	local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name)
-	local data
-	if perplexity_count == 0 then
-		local message = { { role = "system", content = system_prompt }, { role = "user", content = prompt } }
-		data = {
-			messages = message,
-			model = opts.model,
-			temperature = opts.temp,
-			stream = true,
-			presence_penalty = opts.presence_penalty,
-			top_p = opts.top_p,
-		}
-		for _, v in pairs(message) do
-			table.insert(perplexity_messages, v)
-		end
-	else
-		local next_message = { role = "user", content = prompt }
-		table.insert(perplexity_messages, next_message)
-		data = {
-			messages = perplexity_messages,
-			model = opts.model,
-			temperature = opts.temp,
-			stream = true,
-			presence_penalty = opts.presence_penalty,
-			top_p = opts.top_p,
-		}
-	end
-	perplexity_count = perplexity_count + 1
-	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
-	if api_key then
-		table.insert(args, "-H")
-		table.insert(args, "Authorization: Bearer " .. api_key)
-	end
-	table.insert(args, url)
-	return args, "LEGACY"
-end
-
-function M.handle_perplexity_spec_data(data_stream)
-	local line = (data_stream or ""):gsub("^%s+", "")
-	if line:match("^data:%s*%[DONE%]%s*$") then
-		assistant_message = { role = "assistant", content = perplexity_assistant_response }
-		table.insert(perplexity_messages, assistant_message)
-		perplexity_assistant_response = ""
-		return
-	end
-
-	local json_part = line:match("^data:%s*(.+)$")
-	if not json_part then
-		return
-	end
-
-	local ok, json = pcall(vim.json.decode, json_part)
-	if not ok or not json then
-		return
-	end
-
-	if json.choices and json.choices[1] and json.choices[1].delta then
-		local content = json.choices[1].delta.content
-		if content then
-			append_at_anchor(content)
-			perplexity_assistant_response = perplexity_assistant_response .. content
-		end
-	end
-
-	local finish_reason = json.choices and json.choices[1] and json.choices[1].finish_reason
-	if finish_reason and finish_reason ~= vim.NIL then
-		assistant_message = { role = "assistant", content = perplexity_assistant_response }
-		table.insert(perplexity_messages, assistant_message)
-		perplexity_assistant_response = ""
-	end
-end
+function M.calculate_openai_session_cost(_input_tokens, _output_tokens) end
 
 ------------------------------------- Ollama -------------------------------
-local context = {}
-local max_length = 25000
-
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 	print("Calling Ollama: ", opts.model)
 	local url = opts.url or "https://ollama.putty-ai.com/api/generate"
@@ -462,7 +278,7 @@ function M.handle_ollama_spec_data(data_stream)
 		local content = json.response
 		if content then
 			ollama_assistant_response = ollama_assistant_response .. content
-			append_at_anchor(content)
+			write_safely(content)
 		end
 	elseif json.done then
 		if json.context and type(json.context) == "table" then
@@ -498,11 +314,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 
 	-- Default inference if maker didn't return a mode
 	if not stream_mode then
-		if framework and framework:match("ANTHROPIC") then
-			stream_mode = "EVENTS"
-		else
-			stream_mode = "LEGACY"
-		end
+		stream_mode = "LEGACY"
 	end
 
 	if active_job then
@@ -517,7 +329,8 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 	local sse_buf = ""
 	local line_buf = ""
 	local function handle_events_stdout(_, out)
-		sse_buf = sse_buf .. out
+		-- normalize CRLF to LF; append
+		sse_buf = sse_buf .. out:gsub("\r\n", "\n")
 		while true do
 			local sep = sse_buf:find("\n\n", 1, true) -- blank line separates SSE blocks
 			if not sep then
@@ -526,11 +339,10 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 			local block = sse_buf:sub(1, sep - 1)
 			sse_buf = sse_buf:sub(sep + 2)
 
-			-- extract event
-			local ev = block:match("\nevent:%s*(.-)\r?\n") or block:match("^event:%s*(.-)\r?\n")
-
+			-- extract event (first or any line)
+			local ev = block:match("\nevent:%s*(.-)\n") or block:match("^event:%s*(.-)\n")
 			-- each data line
-			for data in block:gmatch("\ndata:%s*(.-)\r?\n") do
+			for data in block:gmatch("\ndata:%s*(.-)\n") do
 				if handle_events_fn then
 					handle_events_fn(data, ev)
 				end
@@ -539,7 +351,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 	end
 
 	local function handle_legacy_stdout(_, out)
-		line_buf = line_buf .. out
+		line_buf = line_buf .. out:gsub("\r\n", "\n")
 		local i = 1
 		while true do
 			local j = line_buf:find("\n", i, true)
@@ -556,6 +368,12 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 	end
 
 	local on_exit_common = vim.schedule_wrap(function()
+		-- flush any leftover partial utf-8
+		if utf8_carry ~= "" then
+			append_at_anchor(utf8_carry)
+			utf8_carry = ""
+		end
+
 		if not replace then
 			local bufnr = vim.api.nvim_get_current_buf()
 			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
@@ -617,31 +435,16 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 end
 
 function M.reset_message_buffers()
-	-- Reset Anthropic messages
-	anthropic_messages = {}
-	anthropic_count = 0
-	anthropic_assistant_response = ""
-
 	-- Reset OpenAI messages
 	openai_messages = {}
 	openai_count = 0
 	openai_assistant_response = ""
 
-	-- Reset Groq messages
-	groq_messages = {}
-	groq_count = 0
-	groq_assistant_response = ""
-
-	-- Reset Perplexity messages
-	perplexity_messages = {}
-	perplexity_count = 0
-	perplexity_assistant_response = ""
-
 	-- Reset Ollama context
 	context = {}
 	ollama_assistant_response = ""
 
-	vim.notify("All LLM message buffers have been reset", vim.log.levels.INFO)
+	vim.notify("LLM buffers reset", vim.log.levels.INFO)
 end
 
 return M
