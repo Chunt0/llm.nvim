@@ -389,7 +389,7 @@ local max_length = 25000
 
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 	print("Calling Ollama: ", opts.model)
-	local url = opts.url or "http://localhost:11434/api/generate"
+	local url = opts.url or "https://ollama.putty-ai.com/api/generate"
 	local data = {
 		prompt = prompt,
 		system = system_prompt,

@@ -1,10 +1,10 @@
 return {
 	models = {
 		perplexity = "llama-3.1-sonar-large-128k-chat",
-		openai = "gpt-4o-mini",
+		openai = "gpt-5-nano",
 		anthropic = "claude-3-5-haiku-latest",
 		groq = "llama-3.3-70b-versatile",
-		ollama = "llama3.3:latest",
+		ollama = "gpt-oss:120b",
 	},
 	price = {
 		openai = {
@@ -35,7 +35,7 @@ return {
 		en2ar_prompt = "You are a helpful assistant. Your goal is to translate text. You will never add anything to the text or output and you will never add commentary about the text you generate. Translate the following into Arabic: ",
 	},
 	vars = {
-		temp = 0.7,
+		temp = 1,
 		presence_penalty = nil,
 		top_p = nil,
 		frequency_penalty = nil,
