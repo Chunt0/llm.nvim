@@ -21,28 +21,37 @@ local function append_at_anchor(txt)
 	if not stream_anchor or not txt or txt == "" then
 		return
 	end
-	-- sanitize odd control chars that sometimes appear in streams
 	txt = txt:gsub("[\r\b]", "")
 
+	-- capture a stable snapshot of the anchor for this write
+	local sa = { bufnr = stream_anchor.bufnr, id = stream_anchor.id }
+
 	vim.schedule(function()
-		if not vim.api.nvim_buf_is_loaded(stream_anchor.bufnr) then
+		-- if the anchor was cleared after we scheduled, bail safely
+		if not sa or not sa.bufnr or not sa.id then
 			return
 		end
-		local pos = vim.api.nvim_buf_get_extmark_by_id(stream_anchor.bufnr, NS, stream_anchor.id, {})
-		if not pos or pos[1] == nil then
+		if not vim.api.nvim_buf_is_loaded(sa.bufnr) then
 			return
 		end
+
+		local ok_pos, pos = pcall(vim.api.nvim_buf_get_extmark_by_id, sa.bufnr, NS, sa.id, {})
+		if not ok_pos or not pos or pos[1] == nil then
+			return
+		end
+
 		local row, col = pos[1], pos[2]
-
 		local lines = vim.split(txt, "\n", { plain = true })
-		vim.api.nvim_buf_set_text(stream_anchor.bufnr, row, col, row, col, lines)
 
+		-- insert text
+		pcall(vim.api.nvim_buf_set_text, sa.bufnr, row, col, row, col, lines)
+
+		-- move the extmark to the new end
 		local last = lines[#lines]
 		local new_row = row + (#lines - 1)
 		local new_col = (#lines == 1) and (col + #last) or #last
-
-		vim.api.nvim_buf_set_extmark(stream_anchor.bufnr, NS, new_row, new_col, {
-			id = stream_anchor.id,
+		pcall(vim.api.nvim_buf_set_extmark, sa.bufnr, NS, new_row, new_col, {
+			id = sa.id,
 			right_gravity = false,
 		})
 	end)
