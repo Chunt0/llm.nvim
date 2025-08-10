@@ -1,4 +1,4 @@
--- llm.lua (OpenAI + Ollama only, fixed streaming to buffer)
+-- llm.lua (OpenAI + Ollama, robust SSE buffering + UTF-8 safe writes)
 local M = {}
 local Job = require("plenary.job")
 local Log = require("log")
@@ -155,6 +155,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 				model = model,
 				input = first,
 				stream = true,
+				-- (optional) temperature/top_p only for models that support it on Responses
 			}
 			url = opts.url or url_responses
 			stream_mode = "EVENTS"
@@ -191,7 +192,8 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 
 	openai_count = openai_count + 1
 
-	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
+	-- -sS silences progress meter; -N disables buffering
+	local args = { "-sS", "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	if api_key then
 		table.insert(args, "-H")
 		table.insert(args, "Authorization: Bearer " .. api_key)
@@ -201,29 +203,34 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	return args, stream_mode
 end
 
--- Chat Completions (legacy SSE) handler (line-by-line)
+-- Chat Completions (legacy SSE) handler (expects a single line: "data: {...}")
 function M.handle_openai_spec_data(line)
 	if not line or line == "" then
 		return
 	end
-	if line:match('"delta":') then
-		line = line:gsub("^data:%s*", "")
-		local ok, json = pcall(vim.json.decode, line)
-		if ok and json and json.choices and json.choices[1] and json.choices[1].delta then
-			local content = json.choices[1].delta.content
-			if content then
-				write_safely(content)
-				openai_assistant_response = openai_assistant_response .. content
-			end
-		end
-	elseif line:match("%[DONE%]") then
+	if line:match("^data:%s*%[DONE%]") then
 		assistant_message = { role = "assistant", content = openai_assistant_response }
 		table.insert(openai_messages, assistant_message)
 		openai_assistant_response = ""
+		return
+	end
+	local payload = line:gsub("^data:%s*", "")
+	if not payload or payload == "" then
+		return
+	end
+
+	local ok, json = pcall(vim.json.decode, payload)
+	if not ok or not json then
+		return
+	end
+	local delta = json.choices and json.choices[1] and json.choices[1].delta and json.choices[1].delta.content
+	if delta then
+		write_safely(delta)
+		openai_assistant_response = openai_assistant_response .. delta
 	end
 end
 
--- Responses API (event-typed SSE) handler (line-by-line)
+-- Responses API (event-typed SSE) handler: data_json with separate event_type
 function M.handle_openai_responses_data(data_json, event_type)
 	local ok, json = pcall(vim.json.decode, data_json)
 	if not ok or not json then
@@ -261,7 +268,8 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 		context = Utils.trim_context(context, max_length)
 		data.context = context
 	end
-	local args = { "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
+	-- -sS silences progress meter; -N disables buffering
+	local args = { "-sS", "-N", "-X", "POST", "-H", "Content-Type: application/json", "-d", vim.json.encode(data) }
 	table.insert(args, url)
 	return args, "LEGACY"
 end
@@ -324,43 +332,70 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 	-- stable insertion point for streaming
 	start_anchor()
 
-	-- Simple line-by-line SSE parser (matches Plenary's on_stdout behavior)
-	local curr_event_state = nil
-	local function events_on_stdout(_, out)
-		if type(out) == "table" then
-			for _, line in ipairs(out) do
-				events_on_stdout(_, line)
-			end
-			return
-		end
-		if not out or out == "" then
-			return
-		end
-		local line = out:gsub("\r\n", "\n")
+	-- === Robust chunk buffers ===
+	local sse_buf = "" -- for EVENTS mode (/v1/responses style)
+	local line_buf = "" -- for LEGACY mode (chat/ollama style)
 
-		local ev = line:match("^event:%s*(.+)$")
-		if ev then
-			curr_event_state = ev
+	local function normalize_chunk(out)
+		if type(out) == "table" then
+			return table.concat(out, "\n")
+		end
+		return out or ""
+	end
+
+	local function events_on_stdout(_, out)
+		local chunk = normalize_chunk(out)
+		if chunk == "" then
 			return
 		end
-		local data = line:match("^data:%s*(.+)$")
-		if data and handle_events_fn then
-			handle_events_fn(data, curr_event_state)
+		sse_buf = sse_buf .. chunk:gsub("\r\n", "\n")
+
+		-- Split into SSE "blocks" separated by blank lines
+		while true do
+			local sep = sse_buf:find("\n\n", 1, true)
+			if not sep then
+				break
+			end
+			local block = sse_buf:sub(1, sep - 1)
+			sse_buf = sse_buf:sub(sep + 2)
+
+			local curr_event = nil
+			for line in (block .. "\n"):gmatch("([^\n]*)\n") do
+				if line ~= "" then
+					local ev = line:match("^event:%s*(.+)$")
+					if ev then
+						curr_event = ev
+					else
+						local data = line:match("^data:%s*(.+)$")
+						if data and handle_events_fn then
+							handle_events_fn(data, curr_event)
+						end
+					end
+				end
+			end
 		end
 	end
 
 	local function legacy_on_stdout(_, out)
-		if type(out) == "table" then
-			for _, line in ipairs(out) do
-				legacy_on_stdout(_, line)
+		local chunk = normalize_chunk(out)
+		if chunk == "" then
+			return
+		end
+		line_buf = line_buf .. chunk:gsub("\r\n", "\n")
+
+		-- Extract complete lines; keep remainder
+		local i = 1
+		while true do
+			local j = line_buf:find("\n", i, true)
+			if not j then
+				line_buf = line_buf:sub(i)
+				break
 			end
-			return
-		end
-		if not out or out == "" then
-			return
-		end
-		if handle_legacy_fn then
-			handle_legacy_fn(out)
+			local line = line_buf:sub(i, j - 1)
+			i = j + 1
+			if handle_legacy_fn then
+				handle_legacy_fn(line)
+			end
 		end
 	end
 
