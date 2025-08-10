@@ -1,4 +1,4 @@
--- llm.lua (OpenAI + Ollama only)
+-- llm.lua (OpenAI + Ollama only, fixed streaming to buffer)
 local M = {}
 local Job = require("plenary.job")
 local Log = require("log")
@@ -86,19 +86,14 @@ local function write_safely(chunk)
 	if not chunk or chunk == "" then
 		return
 	end
-	-- prepend any carried tail from previous chunk
 	if utf8_carry ~= "" then
 		chunk = utf8_carry .. chunk
 		utf8_carry = ""
 	end
-	-- normalize newlines early (helps SSE parsing elsewhere)
-	chunk = chunk:gsub("\r\n", "\n")
-	-- strip control chars we don't want
-	chunk = chunk:gsub("[\r\b]", "")
+	chunk = chunk:gsub("\r\n", "\n"):gsub("[\r\b]", "")
 
 	local complete, tail = split_complete_utf8(chunk)
 	utf8_carry = tail -- keep the incomplete suffix for the next call
-
 	if complete ~= "" then
 		append_at_anchor(complete)
 	end
@@ -160,7 +155,6 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 				model = model,
 				input = first,
 				stream = true,
-				-- (optional) temperature/top_p only for models that support it on Responses
 			}
 			url = opts.url or url_responses
 			stream_mode = "EVENTS"
@@ -207,11 +201,14 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	return args, stream_mode
 end
 
--- Chat Completions (legacy SSE) handler
-function M.handle_openai_spec_data(data_stream)
-	if data_stream:match('"delta":') then
-		data_stream = data_stream:gsub("^data:%s*", "")
-		local ok, json = pcall(vim.json.decode, data_stream)
+-- Chat Completions (legacy SSE) handler (line-by-line)
+function M.handle_openai_spec_data(line)
+	if not line or line == "" then
+		return
+	end
+	if line:match('"delta":') then
+		line = line:gsub("^data:%s*", "")
+		local ok, json = pcall(vim.json.decode, line)
 		if ok and json and json.choices and json.choices[1] and json.choices[1].delta then
 			local content = json.choices[1].delta.content
 			if content then
@@ -219,14 +216,14 @@ function M.handle_openai_spec_data(data_stream)
 				openai_assistant_response = openai_assistant_response .. content
 			end
 		end
-	elseif data_stream:match("%[DONE%]") then
+	elseif line:match("%[DONE%]") then
 		assistant_message = { role = "assistant", content = openai_assistant_response }
 		table.insert(openai_messages, assistant_message)
 		openai_assistant_response = ""
 	end
 end
 
--- Responses API (event-typed SSE) handler
+-- Responses API (event-typed SSE) handler (line-by-line)
 function M.handle_openai_responses_data(data_json, event_type)
 	local ok, json = pcall(vim.json.decode, data_json)
 	if not ok or not json then
@@ -269,11 +266,15 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 	return args, "LEGACY"
 end
 
-function M.handle_ollama_spec_data(data_stream)
-	local ok, json = pcall(vim.json.decode, data_stream)
+function M.handle_ollama_spec_data(line)
+	if not line or line == "" then
+		return
+	end
+	local ok, json = pcall(vim.json.decode, line)
 	if not ok or not json then
 		return
 	end
+
 	if json.response and json.done == false then
 		local content = json.response
 		if content then
@@ -311,8 +312,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 		or "Yell at me for not setting my configuration for my llm plugin correctly"
 
 	local args, stream_mode = make_curl_args_fn(opts, prompt, system_prompt)
-
-	-- Default inference if maker didn't return a mode
 	if not stream_mode then
 		stream_mode = "LEGACY"
 	end
@@ -325,45 +324,43 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 	-- stable insertion point for streaming
 	start_anchor()
 
-	-- SSE/line buffers
-	local sse_buf = ""
-	local line_buf = ""
-	local function handle_events_stdout(_, out)
-		-- normalize CRLF to LF; append
-		sse_buf = sse_buf .. out:gsub("\r\n", "\n")
-		while true do
-			local sep = sse_buf:find("\n\n", 1, true) -- blank line separates SSE blocks
-			if not sep then
-				break
+	-- Simple line-by-line SSE parser (matches Plenary's on_stdout behavior)
+	local curr_event_state = nil
+	local function events_on_stdout(_, out)
+		if type(out) == "table" then
+			for _, line in ipairs(out) do
+				events_on_stdout(_, line)
 			end
-			local block = sse_buf:sub(1, sep - 1)
-			sse_buf = sse_buf:sub(sep + 2)
+			return
+		end
+		if not out or out == "" then
+			return
+		end
+		local line = out:gsub("\r\n", "\n")
 
-			-- extract event (first or any line)
-			local ev = block:match("\nevent:%s*(.-)\n") or block:match("^event:%s*(.-)\n")
-			-- each data line
-			for data in block:gmatch("\ndata:%s*(.-)\n") do
-				if handle_events_fn then
-					handle_events_fn(data, ev)
-				end
-			end
+		local ev = line:match("^event:%s*(.+)$")
+		if ev then
+			curr_event_state = ev
+			return
+		end
+		local data = line:match("^data:%s*(.+)$")
+		if data and handle_events_fn then
+			handle_events_fn(data, curr_event_state)
 		end
 	end
 
-	local function handle_legacy_stdout(_, out)
-		line_buf = line_buf .. out:gsub("\r\n", "\n")
-		local i = 1
-		while true do
-			local j = line_buf:find("\n", i, true)
-			if not j then
-				line_buf = line_buf:sub(i)
-				break
+	local function legacy_on_stdout(_, out)
+		if type(out) == "table" then
+			for _, line in ipairs(out) do
+				legacy_on_stdout(_, line)
 			end
-			local line = line_buf:sub(i, j - 1)
-			i = j + 1
-			if handle_legacy_fn then
-				handle_legacy_fn(line)
-			end
+			return
+		end
+		if not out or out == "" then
+			return
+		end
+		if handle_legacy_fn then
+			handle_legacy_fn(out)
 		end
 	end
 
@@ -400,7 +397,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 		active_job = Job:new({
 			command = "curl",
 			args = args,
-			on_stdout = handle_events_stdout,
+			on_stdout = events_on_stdout,
 			on_stderr = function(_, _) end,
 			on_exit = on_exit_common,
 		})
@@ -408,7 +405,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 		active_job = Job:new({
 			command = "curl",
 			args = args,
-			on_stdout = handle_legacy_stdout,
+			on_stdout = legacy_on_stdout,
 			on_stderr = function(_, _) end,
 			on_exit = on_exit_common,
 		})
