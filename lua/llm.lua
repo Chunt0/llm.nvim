@@ -146,11 +146,12 @@ local max_length = 25000
 ------------------------------------- OpenAI (Chat Completions only) -----------------------------------
 -- No Responses endpoint, no temperature/top_p/etc.
 function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
-	print("Calling OpenAI (chat.completions): ", opts.model)
+	print("Calling OpenAI: ", opts.model)
 
 	local model = opts.model
 	local url_chat = opts.url_chat or "https://api.openai.com/v1/chat/completions"
 	local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name)
+	local reasoning_effort = "minimal"
 
 	local data
 
@@ -163,6 +164,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 			model = model,
 			messages = first,
 			stream = true,
+			reasoning_effort = reasoning_effort,
 		}
 		for _, v in pairs(first) do
 			table.insert(openai_messages, v)
