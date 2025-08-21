@@ -430,12 +430,14 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 			utf8_carry = ""
 		end
 
+		-- move cursor to last line in current buffer, then set lines and set cursor
 		if not replace then
 			local bufnr = vim.api.nvim_get_current_buf()
-			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
+			local last_line = vim.api.nvim_buf_line_count(bufnr) - 1
+			local insert_at = last_line + 1
 			local user_line = "---------------------------User---------------------------"
-			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", user_line, "", "" })
-			vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
+			vim.api.nvim_buf_set_lines(bufnr, insert_at, insert_at, false, { "", user_line, "" })
+			vim.api.nvim_win_set_cursor(0, { insert_at + 3, 0 })
 		end
 		local user_message = { role = "user", content = prompt }
 		local time = os.date("%Y-%m-%dT%H:%M:%S")
