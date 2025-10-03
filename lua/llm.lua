@@ -7,7 +7,7 @@ local Log = require("log")
 local Utils = require("utils")
 
 -- ===== Debug toggle =====
-local DEBUG = false -- set true to spam :messages
+local DEBUG = true -- set true to spam :messages
 local function dbg(msg)
 	if not DEBUG then
 		return
@@ -204,7 +204,7 @@ function M.handle_openai_spec_data(line)
 		if #preview > 220 then
 			preview = preview:sub(1, 200) .. " … " .. preview:sub(-20)
 		end
-		dbg(("SSE line(%d): %s"):format(#line, preview:gsub("\r", "\\r"):gsub("\t", "\\t")))
+		--dbg(("SSE line(%d): %s"):format(#line, preview:gsub("\r", "\\r"):gsub("\t", "\\t")))
 	end
 
 	-- Ignore comments/heartbeats and 'event:' lines
@@ -246,6 +246,7 @@ function M.handle_openai_spec_data(line)
 	if t == "response.output_text.done" or t:match("%.output_text%.done$") then
 		if json.content and json.content[1] and json.content[1].text then
 			assistant_message = { role = "assistant", content = json.content[1].text }
+			dbg("Assistant Message: " .. json.content[1])
 		end
 		return
 	end
