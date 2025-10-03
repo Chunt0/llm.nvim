@@ -7,7 +7,7 @@ local Log = require("log")
 local Utils = require("utils")
 
 -- ===== Debug toggle =====
-local DEBUG = false -- set true to spam :messages
+local DEBUG = true -- set true to spam :messages
 local function dbg(msg)
 	if not DEBUG then
 		return
@@ -312,33 +312,27 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 		if chunk == "" then
 			return
 		end
+		total_bytes = total_bytes + #chunk
+		if DEBUG then
+			local prev = chunk
+			if #prev > 220 then
+				prev = prev:sub(1, 200) .. " … " .. prev:sub(-20)
+			end
+			-- dbg(("stdout chunk bytes=%d head/tail: %s"):format(#chunk, prev:gsub("\r", "\\r")))
+		end
 
 		line_buf = line_buf .. chunk
-		local progressed = true
-		while progressed do
-			progressed = false
-
-			-- Case A: newline-delimited lines (OpenAI chat style)
+		while true do
 			local j = line_buf:find("\n", 1, true)
-			if j then
-				local line = line_buf:sub(1, j - 1)
-				line_buf = line_buf:sub(j + 1)
-				if handle_spec_data_fn and line ~= "" then
-					handle_spec_data_fn(line)
-				end
-				progressed = true
-			else
-				-- Case B: concatenated JSON objects (Ollama style)
-				local objs
-				objs, line_buf = extract_json_objects(line_buf)
-				if #objs > 0 then
-					for _, js in ipairs(objs) do
-						if handle_spec_data_fn then
-							handle_spec_data_fn(js)
-						end
-					end
-					progressed = true
-				end
+			if not j then
+				break
+			end
+			local line = line_buf:sub(1, j - 1)
+			line_buf = line_buf:sub(j + 1)
+			total_lines = total_lines + 1
+			if handle_spec_data_fn and line ~= "" then
+				dbg("Entering handle_spec_data with line: " .. line)
+				handle_spec_data_fn(line)
 			end
 		end
 	end
