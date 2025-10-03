@@ -126,13 +126,15 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name) or os.getenv("OPENAI_API_KEY")
 	local reasoning_effort = opts.reasoning_effort or "minimal"
 
+	dbg("count: " .. openai_count)
+
 	-- Build payload
 	local data
 	if openai_count == 0 then
 		data = {
 			model = model,
 			stream = true,
-			input = opts.input_overrides or prompt, -- can be string or messages[]
+			input = prompt, -- can be string or messages[]
 			instructions = system_prompt,
 			reasoning = { effort = reasoning_effort },
 			-- store = true,
