@@ -263,7 +263,7 @@ function M.handle_openai_spec_data(line)
 
 	-- Log anything unexpected so we can adapt
 	if DEBUG then
-		dbg("Unhandled event: " .. vim.inspect(json))
+		--dbg("Unhandled event: " .. vim.inspect(json))
 	end
 end
 
