@@ -228,8 +228,6 @@ function M.handle_openai_spec_data(line)
 		return
 	end
 
-	dbg("Current json: " .. json)
-
 	-- Capture response id early
 	if json.response and json.response.id and openai_response_id == "" then
 		openai_response_id = json.response.id
