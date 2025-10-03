@@ -7,7 +7,7 @@ local Log = require("log")
 local Utils = require("utils")
 
 -- ===== Debug toggle =====
-local DEBUG = false -- set true to spam :messages
+local DEBUG = true -- set true to spam :messages
 local function dbg(msg)
 	if not DEBUG then
 		return
