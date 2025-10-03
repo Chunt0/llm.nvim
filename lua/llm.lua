@@ -287,6 +287,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 	local replace = opts.replace
 	local framework = opts.framework
 	local model = opts.model
+	print("[llm] Calling " .. model)
 	local system_prompt = opts.system_prompt or "Please configure your system prompt."
 
 	local args = make_curl_args_fn(opts, prompt, system_prompt)
