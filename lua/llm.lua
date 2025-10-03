@@ -244,9 +244,9 @@ function M.handle_openai_spec_data(line)
 
 	-- Final output chunk for that channel
 	if t == "response.output_text.done" or t:match("%.output_text%.done$") then
-		if json.content and json.content[1] and json.content[1].text then
-			assistant_message = { role = "assistant", content = json.content[1].text }
-			dbg("Assistant Message: " .. json.content[1])
+		if json.part and json.part.text then
+			assistant_message = { role = "assistant", content = json.part.text }
+			dbg("Assistant Message: " .. json.part.text)
 		end
 		return
 	end
@@ -317,7 +317,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 			if #prev > 220 then
 				prev = prev:sub(1, 200) .. " … " .. prev:sub(-20)
 			end
-			dbg(("stdout chunk bytes=%d head/tail: %s"):format(#chunk, prev:gsub("\r", "\\r")))
+			--dbg(("stdout chunk bytes=%d head/tail: %s"):format(#chunk, prev:gsub("\r", "\\r")))
 		end
 
 		line_buf = line_buf .. chunk .. "\n"
@@ -330,7 +330,6 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 			line_buf = line_buf:sub(j + 1)
 			total_lines = total_lines + 1
 			if handle_spec_data_fn and line ~= "" then
-				dbg("Entering handle_spec_data with line: " .. line)
 				handle_spec_data_fn(line)
 			end
 		end
