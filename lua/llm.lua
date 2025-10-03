@@ -321,7 +321,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 			dbg(("stdout chunk bytes=%d head/tail: %s"):format(#chunk, prev:gsub("\r", "\\r")))
 		end
 
-		line_buf = line_buf .. chunk
+		line_buf = line_buf .. chunk + "/n"
 		while true do
 			local j = line_buf:find("\n", 1, true)
 			if not j then
