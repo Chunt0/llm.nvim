@@ -218,6 +218,8 @@ function M.handle_openai_spec_data(line)
 		return
 	end
 
+	dbg(json)
+
 	local response_type = tostring(json.type or "")
 
 	-- Streaming text delta
