@@ -4,7 +4,7 @@ local Log = require("log")
 local Utils = require("utils")
 
 -- ===== Debug =====
-local DEBUG = true
+local DEBUG = false
 local function dbg(msg)
 	if not DEBUG then
 		return
@@ -139,33 +139,30 @@ local ollama_assistant_response = ""
 local context = {}
 local max_length = 25000
 
-------------------------------------- OpenAI (Responses API) -----------------------------------
+------------------------------------- OpenAI -----------------------------------
 function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
-	print("Calling OpenAI (Responses API): ", opts.model)
+	print("Calling OpenAI: ", opts.model)
 
 	local model = opts.model
-	local url_responses = opts.url or "https://api.openai.com/v1/responses"
+	local url_chat = opts.url or "https://api.openai.com/v1/chat/completions"
 	local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name)
-	local reasoning_effort = "minimal" -- "minimal" | "medium" | "maximal"
+	local reasoning_effort = "minimal"
 
 	local data
-	-- Always use 'input' with Responses API.
+
 	if openai_count == 0 then
 		data = {
 			model = model,
-			stream = true,
 			input = prompt,
-			instructions = system_prompt, -- optional system prompt
-			reasoning = { effort = reasoning_effort },
-			-- store = true, -- optional server-side conversation memory
+			stream = true,
+			reasoning_effort = reasoning_effort,
 		}
 	else
 		data = {
 			model = model,
+			messages = prompt,
 			stream = true,
-			input = prompt,
-			previous_response_id = openai_response_id, -- tie to last turn
-			reasoning = { effort = reasoning_effort },
+			previous_response_id = openai_response_id,
 		}
 	end
 
@@ -176,9 +173,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 		table.insert(args, "-H")
 		table.insert(args, "Authorization: Bearer " .. api_key)
 	end
-	-- If you target certain reasoning models that require a beta header, uncomment:
-	-- table.insert(args, "-H"); table.insert(args, "OpenAI-Beta: reasoning=enable")
-	table.insert(args, url_responses)
+	table.insert(args, url_chat)
 
 	do
 		local shown = {}
@@ -203,11 +198,7 @@ function M.handle_openai_spec_data(line)
 		return
 	end
 
-	-- Strip possible SSE "event:" prefix lines; keep JSON after "data:"
-	local payload = line
-	payload = payload:gsub("^event:%s*[%w%._-]+%s*$", "")
-	payload = payload:gsub("^data:%s*", "")
-	payload = payload:gsub("^%s+", ""):gsub("%s+$", "")
+	local payload = line:gsub("^data:%s*", ""):gsub("^%s+", ""):gsub("%s+$", "")
 	if payload == "" then
 		return
 	end
@@ -219,14 +210,6 @@ function M.handle_openai_spec_data(line)
 	end
 
 	local response_type = tostring(json.type or "")
-
-	-- Streaming text delta
-	if response_type:match("response.output_text.delta") and json.delta then
-		write_safely(json.delta)
-		return
-	end
-
-	-- Final output text (done)
 	if response_type:match("response.output_text.done") then
 		if json.content and json.content[1] and json.content[1].text then
 			assistant_message = { role = "assistant", content = json.content[1].text }
@@ -234,17 +217,17 @@ function M.handle_openai_spec_data(line)
 		return
 	end
 
-	-- Completed; capture response id for threading
-	if response_type:match("response.completed") then
-		if json.response and json.response.id then
-			openai_response_id = json.response.id
+	if response_type:match("response.output_text.delta") then
+		if json.delta then
+			write_safely(json.delta)
 		end
 		return
 	end
 
-	-- Error event (optional)
-	if response_type:match("response.error") and json.error then
-		dbg("OpenAI error: " .. (json.error.message or vim.inspect(json.error)))
+	if response_type:match("response.completed") then
+		if json.response and json.response.id then
+			openai_response_id = json.response.id
+		end
 		return
 	end
 end
@@ -397,7 +380,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 		while progressed do
 			progressed = false
 
-			-- Case A: newline-delimited lines (SSE "event:" / "data:" pairs)
+			-- Case A: newline-delimited lines (OpenAI chat style)
 			local j = line_buf:find("\n", 1, true)
 			if j then
 				local line = line_buf:sub(1, j - 1)
@@ -501,6 +484,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 end
 
 function M.reset_message_buffers()
+	openai_messages = {}
 	openai_count = 0
 	openai_response_id = ""
 
