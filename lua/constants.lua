@@ -20,7 +20,7 @@ return {
 	},
 	api_endpoints = {
 		anthropic = "https://api.anthropic.com/v1/messages",
-		openai = "https://api.openai.com/v1/chat/completions",
+		openai = "https://api.openai.com/v1/responses",
 		perplexity = "https://api.perplexity.ai/chat/completions",
 		dalle = "https://api.openai.com/v1/images/generations",
 		ollama = "https://ollama.putty-ai.com/api/generate",

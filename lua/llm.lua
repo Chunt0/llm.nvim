@@ -1,5 +1,3 @@
--- llm.lua (OpenAI Chat Completions + Ollama only)
--- Robust SSE buffering, UTF-8 safe writes, anchored insertion, and debug taps.
 local M = {}
 local Job = require("plenary.job")
 local Log = require("log")
@@ -133,49 +131,38 @@ end
 -------------------------------- Initialize Variables---------------------------
 local assistant_message = nil
 
--- OpenAI (chat/completions) state
-local openai_messages = {}
 local openai_count = 0
-local openai_assistant_response = ""
+local openai_response_id = ""
 
 -- Ollama state
 local ollama_assistant_response = ""
 local context = {}
 local max_length = 25000
 
-------------------------------------- OpenAI (Chat Completions only) -----------------------------------
--- No Responses endpoint, no temperature/top_p/etc.
+------------------------------------- OpenAI -----------------------------------
 function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	print("Calling OpenAI: ", opts.model)
 
 	local model = opts.model
-	local url_chat = opts.url_chat or "https://api.openai.com/v1/chat/completions"
+	local url_chat = opts.url or "https://api.openai.com/v1/chat/completions"
 	local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name)
 	local reasoning_effort = "minimal"
 
 	local data
 
 	if openai_count == 0 then
-		local first = {
-			{ role = "system", content = system_prompt },
-			{ role = "user", content = prompt },
-		}
 		data = {
 			model = model,
-			messages = first,
+			input = prompt,
 			stream = true,
 			reasoning_effort = reasoning_effort,
 		}
-		for _, v in pairs(first) do
-			table.insert(openai_messages, v)
-		end
 	else
-		local next_message = { role = "user", content = prompt }
-		table.insert(openai_messages, next_message)
 		data = {
 			model = model,
-			messages = openai_messages,
+			messages = prompt,
 			stream = true,
+			previous_response_id = openai_response_id,
 		}
 	end
 
@@ -188,7 +175,6 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 	end
 	table.insert(args, url_chat)
 
-	-- debug: show curl args (redact bearer)
 	do
 		local shown = {}
 		for _, a in ipairs(args) do
@@ -200,34 +186,49 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 		dbg("OpenAI curl args: " .. table.concat(shown, " "))
 	end
 
-	return args, "LEGACY"
+	return args
 end
 
--- Chat Completions SSE handler (one line is "data: {...}" or "data: [DONE]")
 function M.handle_openai_spec_data(line)
 	if not line or line == "" then
 		return
 	end
-	dbg("OpenAI LEGACY line: " .. math.min(#line, 160) .. " bytes")
+
 	if line:match("^data:%s*%[DONE%]") then
-		assistant_message = { role = "assistant", content = openai_assistant_response }
-		table.insert(openai_messages, assistant_message)
-		openai_assistant_response = ""
 		return
 	end
-	local payload = line:gsub("^data:%s*", "")
+
+	local payload = line:gsub("^data:%s*", ""):gsub("^%s+", ""):gsub("%s+$", "")
 	if payload == "" then
 		return
 	end
 
 	local ok, json = pcall(vim.json.decode, payload)
 	if not ok or not json then
+		dbg("OpenAI: failed to decode payload: " .. payload)
 		return
 	end
-	local delta = json.choices and json.choices[1] and json.choices[1].delta and json.choices[1].delta.content
-	if delta then
-		write_safely(delta)
-		openai_assistant_response = openai_assistant_response .. delta
+
+	local response_type = tostring(json.type or "")
+	if response_type:match("response.output_text.done") then
+		if json.content and json.content[1] and json.content[1].text then
+			assistant_message = { role = "assistant", content = json.content[1].text }
+		end
+		return
+	end
+
+	if response_type:match("response.output_text.delta") then
+		if json.delta then
+			write_safely(json.delta)
+		end
+		return
+	end
+
+	if response_type:match("response.completed") then
+		if json.response and json.response.id then
+			openai_response_id = json.response.id
+		end
+		return
 	end
 end
 
@@ -257,14 +258,13 @@ function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
 		dbg("Ollama curl args: " .. table.concat(shown, " "))
 	end
 
-	return args, "LEGACY"
+	return args
 end
 
 function M.handle_ollama_spec_data(line)
 	if not line or line == "" then
 		return
 	end
-	dbg("Ollama LEGACY line: " .. math.min(#line, 160) .. " bytes")
 	local ok, json = pcall(vim.json.decode, line)
 	if not ok or not json then
 		return
@@ -338,7 +338,7 @@ end
 local group = vim.api.nvim_create_augroup("LLM_AutoGroup", { clear = true })
 local active_job = nil
 
-function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_legacy_fn, _handle_events_fn)
+function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spec_data_fn)
 	vim.api.nvim_clear_autocmds({ group = group })
 	local prompt = Utils.get_prompt(opts)
 	if not prompt then
@@ -351,9 +351,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 	local system_prompt = opts.system_prompt
 		or "Yell at me for not setting my configuration for my llm plugin correctly"
 
-	local args, stream_mode = make_curl_args_fn(opts, prompt, system_prompt)
-	-- Force legacy mode (we only support chat.completions + ollama)
-	stream_mode = "LEGACY"
+	local args = make_curl_args_fn(opts, prompt, system_prompt)
 
 	if active_job then
 		active_job:shutdown()
@@ -361,9 +359,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 	end
 
 	start_anchor()
-	dbg("Starting job in mode: " .. stream_mode)
 
-	-- === Robust chunk buffer for LEGACY mode
 	local line_buf = ""
 
 	local function normalize_chunk(out)
@@ -373,12 +369,11 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 		return (out or ""):gsub("\r\n", "\n")
 	end
 
-	local function legacy_on_stdout(_, out)
+	local function on_stdout(_, out)
 		local chunk = normalize_chunk(out)
 		if chunk == "" then
 			return
 		end
-		dbg("LEGACY chunk: " .. #chunk .. " bytes")
 
 		line_buf = line_buf .. chunk
 		local progressed = true
@@ -390,8 +385,8 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 			if j then
 				local line = line_buf:sub(1, j - 1)
 				line_buf = line_buf:sub(j + 1)
-				if handle_legacy_fn and line ~= "" then
-					handle_legacy_fn(line)
+				if handle_spec_data_fn and line ~= "" then
+					handle_spec_data_fn(line)
 				end
 				progressed = true
 			else
@@ -400,8 +395,8 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 				objs, line_buf = extract_json_objects(line_buf)
 				if #objs > 0 then
 					for _, js in ipairs(objs) do
-						if handle_legacy_fn then
-							handle_legacy_fn(js)
+						if handle_spec_data_fn then
+							handle_spec_data_fn(js)
 						end
 					end
 					progressed = true
@@ -417,8 +412,8 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 			local objs
 			objs, line_buf = extract_json_objects(line_buf)
 			for _, js in ipairs(objs) do
-				if handle_legacy_fn then
-					handle_legacy_fn(js)
+				if handle_spec_data_fn then
+					handle_spec_data_fn(js)
 				end
 			end
 			line_buf = ""
@@ -458,7 +453,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_leg
 	active_job = Job:new({
 		command = "curl",
 		args = args,
-		on_stdout = legacy_on_stdout,
+		on_stdout = on_stdout,
 		on_stderr = function(_, err)
 			if err and err ~= "" then
 				dbg("STDERR: " .. err)
@@ -491,7 +486,7 @@ end
 function M.reset_message_buffers()
 	openai_messages = {}
 	openai_count = 0
-	openai_assistant_response = ""
+	openai_response_id = ""
 
 	context = {}
 	ollama_assistant_response = ""
