@@ -233,7 +233,7 @@ function M.handle_openai_spec_data(line)
 	end
 
 	-- Capture response id early
-	if json.response and json.response.id and openai_response_id == "" then
+	if json.response and json.response.id then
 		openai_response_id = json.response.id
 		dbg("response.id=" .. openai_response_id)
 	end
@@ -248,9 +248,9 @@ function M.handle_openai_spec_data(line)
 
 	-- Final output chunk for that channel
 	if t == "response.output_text.done" or t:match("%.output_text%.done$") then
-		if json.part and json.part.text then
-			assistant_message = { role = "assistant", content = json.part.text }
-			dbg("Assistant Message: " .. json.part.text)
+		if json.text then
+			assistant_message = { role = "assistant", content = json.text }
+			dbg("Assistant Message: " .. json.text)
 		end
 		return
 	end
