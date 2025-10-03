@@ -331,6 +331,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 			line_buf = line_buf:sub(j + 1)
 			total_lines = total_lines + 1
 			if handle_spec_data_fn and line ~= "" then
+				dbg("Entering handle_spec_data with line: " .. line)
 				handle_spec_data_fn(line)
 			end
 		end
@@ -355,7 +356,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 				handle_spec_data_fn("data: " .. payload)
 			else
 				if DEBUG then
-					dbg("remainder not JSON: " .. payload)
+					--dbg("remainder not JSON: " .. payload)
 				end
 			end
 			line_buf = ""
