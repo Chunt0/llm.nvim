@@ -348,6 +348,8 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 			)
 		)
 
+		openai_count = 1
+
 		-- Try to parse any remainder
 		if line_buf ~= "" then
 			local payload = line_buf:gsub("^data:%s*", ""):gsub("^%s+", ""):gsub("%s+$", "")
