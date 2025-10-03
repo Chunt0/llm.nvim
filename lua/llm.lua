@@ -137,15 +137,17 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
 			input = prompt, -- can be string or messages[]
 			instructions = system_prompt,
 			reasoning = { effort = reasoning_effort },
-			-- store = true,
+			store = true,
 		}
 	else
 		data = {
 			model = model,
 			stream = true,
-			input = opts.input_overrides or prompt,
+			input = prompt,
+			instructions = system_prompt,
 			previous_response_id = openai_response_id,
 			reasoning = { effort = reasoning_effort },
+			store = true,
 		}
 	end
 	local json = vim.json.encode(data)
