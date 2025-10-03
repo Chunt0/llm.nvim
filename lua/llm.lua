@@ -318,7 +318,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 			if #prev > 220 then
 				prev = prev:sub(1, 200) .. " … " .. prev:sub(-20)
 			end
-			-- dbg(("stdout chunk bytes=%d head/tail: %s"):format(#chunk, prev:gsub("\r", "\\r")))
+			dbg(("stdout chunk bytes=%d head/tail: %s"):format(#chunk, prev:gsub("\r", "\\r")))
 		end
 
 		line_buf = line_buf .. chunk
