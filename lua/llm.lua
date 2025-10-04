@@ -1,6 +1,3 @@
--- llm_responses_debug.lua
--- Responses API *only* + aggressive debug logs.
-
 local M = {}
 local Job = require("plenary.job")
 local Log = require("log")
@@ -325,19 +322,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 			--dbg(("stdout chunk bytes=%d head/tail: %s"):format(#chunk, prev:gsub("\r", "\\r")))
 		end
 
-		line_buf = line_buf .. chunk .. "\n"
-		while true do
-			local j = line_buf:find("\n", 1, true)
-			if not j then
-				break
-			end
-			local line = line_buf:sub(1, j - 1)
-			line_buf = line_buf:sub(j + 1)
-			total_lines = total_lines + 1
-			if handle_spec_data_fn and line ~= "" then
-				handle_spec_data_fn(line)
-			end
-		end
+		handle_spec_data_fn(chunk)
 	end
 
 	local on_exit_common = vim.schedule_wrap(function(code, signal)
