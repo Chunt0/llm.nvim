@@ -326,31 +326,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 	end
 
 	local on_exit_common = vim.schedule_wrap(function(code, signal)
-		dbg(
-			("curl exit code=%s signal=%s total_bytes=%d total_lines=%d remainder_bytes=%d"):format(
-				tostring(code),
-				tostring(signal),
-				total_bytes,
-				total_lines,
-				#line_buf
-			)
-		)
-
 		openai_count = 1
-
-		-- Try to parse any remainder
-		if line_buf ~= "" then
-			local payload = line_buf:gsub("^data:%s*", ""):gsub("^%s+", ""):gsub("%s+$", "")
-			local ok, json = pcall(vim.json.decode, payload)
-			if ok and json and handle_spec_data_fn then
-				handle_spec_data_fn("data: " .. payload)
-			else
-				if DEBUG then
-					--dbg("remainder not JSON: " .. payload)
-				end
-			end
-			line_buf = ""
-		end
 
 		if utf8_carry ~= "" then
 			write_safely(utf8_carry)
