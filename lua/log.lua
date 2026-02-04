@@ -1,5 +1,6 @@
 local M = {}
 
+local Config = require("llm_config")
 local enabled = (os.getenv("LLM_LOG") == "1")
 local redact = true
 
@@ -53,12 +54,15 @@ local function maybe_redact(entry)
 end
 
 function M.log(log_entry)
+    local cfg = Config.logging or {}
+    if cfg.enabled ~= nil then enabled = cfg.enabled end
+    if cfg.redact ~= nil then redact = cfg.redact end
     if not enabled then
         return
     end
-    local home_path = os.getenv("HOME") or "~"
+    local data_dir = cfg.dir or (vim.fn.stdpath('data') .. "/llm/logs/")
     local date = os.date("%Y-%m-%d")
-    local log_directory = home_path .. "/.logs/llm/"
+    local log_directory = data_dir
     local log_file_path = log_directory .. date .. ".json"
 
     ensure_dir(log_directory)

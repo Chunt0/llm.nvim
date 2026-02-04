@@ -91,7 +91,7 @@ end
 function M.dalle()
 	llm.invoke_llm_and_stream_into_editor({
 		url = DALLE_URL,
-		model = constants.models.openai,
+		model = "gpt-image-1",
 		api_key_name = OPENAI_API_KEY_NAME,
 		framework = FRAMEWORK,
 	}, llm.make_dalle_spec_curl_args, llm.handle_dalle_spec_data)

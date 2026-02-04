@@ -1,72 +1,127 @@
-### llm.nvim
-Welcome!
+llm.nvim
 
-This bad boy works for these API services:
- - Ollama
- - OpenAI
- - Anthropic
- - Perplexity
- - Groq
+Neovim plugin for streaming LLM responses directly into your editor. It supports multiple providers (OpenAI, Groq, Anthropic, Perplexity, Ollama), inline editing, optional chat memory, and image generation with DALL·E.
 
-Best way to use this is with neovim's lazy plugin manager. Here is my current config script
+Features
+- Streaming responses into the current buffer or a float/split scratch buffer.
+- Provider wrappers for OpenAI (Responses), Groq, Anthropic, Perplexity, and Ollama.
+- DALL·E image generation; saves images to disk and reports the file path.
+- Per-buffer conversation memory for code chat (optional, configurable).
+- Log redaction and opt-in logging to stdpath data directory.
 
-
-``` lua
+Quick Start (lazy.nvim)
+```lua
 return {
-	{ -- Integrated LLM
-		"Chunt0/llm.nvim",
-		dependencies = { "nvim-lua/plenary.nvim" },
-		config = function()
-			local groq = require("groq")
-			local openai = require("openai")
-			local anthropic = require("anthropic")
-			local perplexity = require("perplexity")
-			local ollama = require("ollama")
-			local prompts = require("prompts")
-			local models = require("models")
-			local vars = require("variables")
+  {
+    "Chunt0/llm.nvim",
+    dependencies = { "nvim-lua/plenary.nvim" },
+    config = function()
+      local groq = require("groq")
+      local openai = require("openai")
+      local anthropic = require("anthropic")
+      local perplexity = require("perplexity")
+      local ollama = require("ollama")
 
-			-- Example use of models
-			-- models.openai = "gpt_4o_mini" -- Use gpt-4o-mini instead of default gpt-4o
-			-- models.groq = "mixtral_8x7b" -- Use mixtral_8x7b instead of default llama3.1-70b-versatile
+      -- Optional config
+      require("llm_config").setup({
+        ui = { mode = "inline", throttle_ms = 20 },
+        memory = { enabled = true, max_messages = 20 },
+        context = { max_buffer_bytes = 200 * 1024 },
+        logging = { enabled = false, redact = true },
+        network = { max_time = 120, retry = 2 },
+      })
 
-			-- Example use of system_prompt set up
-			-- prompts.system_prompt = "You are my faithful slave. DO EVERYTHING I SAY" 
-
-			-- Example use of vars
-			-- vars.temp = 1.5 -- value between 0 - 2 default is 0.7, increases randomness in token sampling. Higher values create greater randomness.
-			-- vars.top_p = 0.5 -- value between 0 - 1 default is 1, determines the range of possible tokens to be sampled from. A value less than 1 reduces the space of possible tokens to be sampled
-			-- vars.presence_penalty =  -- value between -2 - 2  default is 0, a higher value increases penalty for repeating previously produced tokens
-
-			-- Make these keymaps anything you would like! Check the source code to see all the other functions I've built
-			-- Such as openai.dalle!
-			vim.keymap.set({ "n", "v" }, "<leader>H", groq.invoke, { desc = "llm groq" })
-			vim.keymap.set({ "n", "v" }, "<leader>J", perplexity.invoke, { desc = "llm perplexity" })
-			vim.keymap.set({ "n", "v" }, "<leader>K", anthropic.invoke, { desc = "llm anthropic" })
-			vim.keymap.set({ "n", "v" }, "<leader>L", openai.invoke, { desc = "llm openai" })
-		end,
-	},
+      -- Example keymaps
+      vim.keymap.set({ "n", "v" }, "<leader>J", groq.invoke, { desc = "llm groq" })
+      vim.keymap.set({ "n", "v" }, "<leader>K", anthropic.invoke, { desc = "llm anthropic" })
+      vim.keymap.set({ "n", "v" }, "<leader>L", openai.invoke, { desc = "llm openai" })
+      vim.keymap.set({ "n", "v" }, "<leader>P", perplexity.invoke, { desc = "llm perplexity" })
+      vim.keymap.set({ "n", "v" }, "<leader>O", ollama.invoke, { desc = "llm ollama" })
+    end,
+  },
 }
 ```
 
-Remember to set your api keys as system variables. Something like this in your .bashrc:
+Environment Variables
+Set API keys as environment variables:
+```
+export OPENAI_API_KEY="..."
+export GROQ_API_KEY="..."
+export ANTHROPIC_API_KEY="..."
+export PERPLEXITY_API_KEY="..."
+```
 
-export OPENAI_API_KEY="fakeapikeyoweiuyrhgfoiwqhgertouiy23g5tiqu34hr"
+If you only have some keys, the others will just not work for their providers.
 
-export GROQ_API_KEY="fakeapikeyoweiuyrhgfoiwqhgertouiy23g5tiqu34hr"
+How It Works (Important Code Paths)
+- Core streaming engine: `lua/llm.lua`
+  - Builds provider-specific curl requests.
+  - Streams and parses responses (SSE/JSONL).
+  - Inserts content at a stream anchor in the target buffer.
+  - Handles cancel/reset and logging.
+- Provider wrappers: `lua/openai.lua`, `lua/groq.lua`, `lua/anthropic.lua`, `lua/perplexity.lua`, `lua/ollama.lua`
+  - Small wrappers for invoking provider-specific handlers.
+- Stream parser helpers: `lua/stream.lua`
+  - SSE and JSONL parsing utilities.
+- UI targets: `lua/ui.lua`
+  - Inline, float, or split buffers for output.
+- Conversation memory: `lua/memory.lua`
+  - Per-buffer chat history for `code_chat`.
+- Configuration: `lua/llm_config.lua`
 
-export ANTHROPIC_API_KEY="fakeapikeyoweiuyrhgfoiwqhgertouiy23g5tiqu34hr"
+Commands
+- `:LLMInvoke provider=<openai|groq|anthropic|perplexity|ollama> mode=<invoke|code|chat>`
+- `:LLMCancel` to stop a running stream
+- `:LLMReset` to clear internal buffers
+- `:LLMClear` to clear per-buffer conversation memory
+- `:LLMDalle` to generate an image (uses visual selection as prompt)
 
-export PERPLEXITY_API_KEY="fakeapikeyoweiuyrhgfoiwqhgertouiy23g5tiqu34hr"
+Configuration
+Use `require('llm_config').setup{ ... }`.
 
-If you only have some or just one of the keys, that's fine, it wont break if the other functions don't have there keys set - you just wont be able to use them.
+Options:
+- ui.mode: `"inline" | "float" | "split"`
+- ui.throttle_ms: delay for batching stream writes
+- memory.enabled: enable per-buffer memory (used in code_chat)
+- memory.max_messages: limit stored messages per buffer
+- context.max_buffer_bytes: max size for a buffer to be included in context
+- context.include_filetypes: allowlist of filetypes
+- logging.enabled: opt-in logging
+- logging.redact: redact user/assistant text
+- logging.dir: override log directory
+- network.max_time: curl max time
+- network.retry: curl retry count
 
-Configuration and security notes
-- Set `LLM_LOG=1` to enable local JSON logging to `~/.logs/llm/YYYY-MM-DD.json`. By default logging is disabled and entries are redacted to avoid storing sensitive prompts.
-- API keys are read from environment variables (e.g., `OPENAI_API_KEY`, `GROQ_API_KEY`, etc.). Avoid hardcoding keys.
-- Escape to cancel: during a running stream, pressing `<Esc>` in the current buffer cancels the job (buffer-local only; no global keymap override).
+Usage Patterns
+- Invoke (single answer)
+  - Select your prompt in visual mode, then run a provider's `invoke` or use `:LLMInvoke`.
+- Code replace
+  - Select code in visual mode, run `mode=code` to replace the selection with the model output.
+- Code chat
+  - Select a question and run `mode=chat` for context-aware answers. Memory is enabled by default.
+- DALL·E
+  - Select an image prompt and run `:LLMDalle`.
+
+Logging and Privacy
+- Logging is disabled by default.
+- Enable by setting `LLM_LOG=1` or `logging.enabled = true` in config.
+- Logs are written under `stdpath('data')/llm/logs` and redacted by default.
+
+Security Notes
+- API keys are passed to curl via stdin (`curl -K -`) to keep them out of process argv.
+- Avoid committing keys in config files or scripts.
+
+Troubleshooting
+- 401/403: API key missing or invalid.
+- 429: Rate limited; try again later.
+- 5xx: Provider error; retry after a short delay.
+- If streaming stalls, try increasing `network.max_time` or using a smaller prompt.
 
 Development
-- Lint: `luacheck .` (configured via `.luacheckrc`)
-- Format: `stylua .` (configured via `stylua.toml`)
-- Tests: run `busted -v` (minimal tests in `tests/`)
+- Lint: `luacheck .`
+- Format: `stylua .`
+- Tests: `busted -v`
+
+See also
+- `docs/recipes.md` for usage examples
+- `CONTRIBUTING.md` for development guidelines

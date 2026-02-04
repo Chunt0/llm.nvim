@@ -51,11 +51,11 @@ function M.should_include_file(filename)
 end
 
 function M.get_all_buffers_text(opts)
-	local all_text = {}
-	local function process_buffer(buf)
-		local filename = vim.api.nvim_buf_get_name(buf)
-		if M.should_include_file(filename) then
-			local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local all_text = {}
+  local function process_buffer(buf)
+    local filename = vim.api.nvim_buf_get_name(buf)
+    if M.should_include_file(filename) then
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
 			-- Add filename as the first line
 			table.insert(all_text, "File: " .. filename)
@@ -69,39 +69,53 @@ function M.get_all_buffers_text(opts)
 		end
 	end
 
-    local max_bytes = (opts and opts.max_buffer_bytes) or (200 * 1024) -- 200KB default
+  local max_bytes = (opts and opts.max_buffer_bytes) or (require('llm_config').context.max_buffer_bytes) or (200 * 1024)
+  local include_fts = (require('llm_config').context.include_filetypes)
 
-    if opts.all_buffers then
-        local buffers = vim.api.nvim_list_bufs()
+  if opts.all_buffers then
+    local buffers = vim.api.nvim_list_bufs()
 
-        for _, buf in ipairs(buffers) do
-            if vim.api.nvim_buf_is_loaded(buf) then
-                local name = vim.api.nvim_buf_get_name(buf)
-                -- size guard
-                local ok, stat = pcall(vim.loop.fs_stat, name)
-                if ok and stat and stat.size and stat.size > max_bytes then
-                    -- skip large buffers
-                else
-                    process_buffer(buf)
-                end
-            end
+    for _, buf in ipairs(buffers) do
+      if vim.api.nvim_buf_is_loaded(buf) then
+        local name = vim.api.nvim_buf_get_name(buf)
+        if include_fts then
+          local ft = vim.bo[buf].filetype
+          local allowed = false
+          for _, x in ipairs(include_fts) do if x == ft then allowed = true break end end
+          if not allowed then goto continue end
         end
-    else
-        if opts.own_buffer then
-			-- Get the current window buffer
-			-- Seems important but I think I'm going to t
-			local buf = vim.api.nvim_get_current_buf()
-            local name = vim.api.nvim_buf_get_name(buf)
-            local ok, stat = pcall(vim.loop.fs_stat, name)
-            if ok and stat and stat.size and stat.size > max_bytes then
-                -- skip large buffer
-            else
-                process_buffer(buf)
-            end
+        -- size guard
+        local ok, stat = pcall(vim.loop.fs_stat, name)
+        if ok and stat and stat.size and stat.size > max_bytes then
+          -- skip large buffers
+        else
+          process_buffer(buf)
         end
-        return table.concat(all_text, "\n")
+        ::continue::
+      end
+    end
+  else
+    if opts.own_buffer then
+      -- Get the current window buffer
+      -- Seems important but I think I'm going to t
+      local buf = vim.api.nvim_get_current_buf()
+      local name = vim.api.nvim_buf_get_name(buf)
+      if include_fts then
+        local ft = vim.bo[buf].filetype
+        local allowed = false
+        for _, x in ipairs(include_fts) do if x == ft then allowed = true break end end
+        if not allowed then return table.concat(all_text, "\n") end
+      end
+      local ok, stat = pcall(vim.loop.fs_stat, name)
+      if ok and stat and stat.size and stat.size > max_bytes then
+        -- skip large buffer
+      else
+        process_buffer(buf)
+      end
     end
     return table.concat(all_text, "\n")
+  end
+  return table.concat(all_text, "\n")
 end
 
 function M.get_lines_until_cursor()
@@ -196,24 +210,28 @@ function M.get_prompt(opts)
 			-- Enter normal mode
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
 		elseif opts.code_chat then
-			local bufnr = vim.api.nvim_get_current_buf()
-			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-			local agent_line = "---------------------------Agent---------------------------"
-			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
-			vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
-			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
+			if opts.ui_mode == "inline" then
+				local bufnr = vim.api.nvim_get_current_buf()
+				local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
+				local agent_line = "---------------------------Agent---------------------------"
+				vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
+				vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
+				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
+			end
 			local buffer_text = M.get_all_buffers_text(opts)
 			prompt = "# You are a highly knowledgeable coding assistant. I will give you the current code context and you will answer my questions with this context to help guide you. \n\n # Code Context: \n"
 				.. buffer_text
 				.. "\n\n# User question: \n"
 				.. prompt
 		else
-			local bufnr = vim.api.nvim_get_current_buf()
-			local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-			local agent_line = "---------------------------Agent---------------------------"
-			vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
-			vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
-			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
+			if opts.ui_mode == "inline" then
+				local bufnr = vim.api.nvim_get_current_buf()
+				local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
+				local agent_line = "---------------------------Agent---------------------------"
+				vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
+				vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
+				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
+			end
 		end
     else
         vim.notify("LLM: You must highlight the prompt you wish to send.", vim.log.levels.ERROR)
