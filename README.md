@@ -60,3 +60,13 @@ export ANTHROPIC_API_KEY="fakeapikeyoweiuyrhgfoiwqhgertouiy23g5tiqu34hr"
 export PERPLEXITY_API_KEY="fakeapikeyoweiuyrhgfoiwqhgertouiy23g5tiqu34hr"
 
 If you only have some or just one of the keys, that's fine, it wont break if the other functions don't have there keys set - you just wont be able to use them.
+
+Configuration and security notes
+- Set `LLM_LOG=1` to enable local JSON logging to `~/.logs/llm/YYYY-MM-DD.json`. By default logging is disabled and entries are redacted to avoid storing sensitive prompts.
+- API keys are read from environment variables (e.g., `OPENAI_API_KEY`, `GROQ_API_KEY`, etc.). Avoid hardcoding keys.
+- Escape to cancel: during a running stream, pressing `<Esc>` in the current buffer cancels the job (buffer-local only; no global keymap override).
+
+Development
+- Lint: `luacheck .` (configured via `.luacheckrc`)
+- Format: `stylua .` (configured via `stylua.toml`)
+- Tests: run `busted -v` (minimal tests in `tests/`)

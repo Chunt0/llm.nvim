@@ -268,6 +268,54 @@ function M.handle_openai_spec_data(line)
 	end
 end
 
+-- ===== Placeholders for other frameworks (stubs to avoid runtime errors) =====
+local function not_implemented(name)
+    dbg(name .. " not implemented; skipping request")
+    vim.schedule(function()
+        vim.notify("LLM: " .. name .. " is not implemented yet", vim.log.levels.WARN)
+    end)
+end
+
+function M.make_perplexity_spec_curl_args()
+    not_implemented("Perplexity handler")
+    return nil
+end
+function M.handle_perplexity_spec_data(_)
+    -- no-op for now
+end
+
+function M.make_anthropic_spec_curl_args()
+    not_implemented("Anthropic handler")
+    return nil
+end
+function M.handle_anthropic_spec_data(_)
+    -- no-op for now
+end
+
+function M.make_groq_spec_curl_args()
+    not_implemented("Groq handler")
+    return nil
+end
+function M.handle_groq_spec_data(_)
+    -- no-op for now
+end
+
+function M.make_ollama_spec_curl_args()
+    not_implemented("Ollama handler")
+    return nil
+end
+function M.handle_ollama_spec_data(_)
+    -- no-op for now
+end
+
+function M.make_dalle_spec_curl_args()
+    not_implemented("DALL·E handler")
+    return nil
+end
+function M.handle_dalle_spec_data(_)
+    -- no-op for now
+end
+
 -- ===== Invoke =====
 local group = vim.api.nvim_create_augroup("LLM_AutoGroup", { clear = true })
 local active_job = nil
@@ -281,13 +329,17 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 		return
 	end
 
-	local replace = opts.replace
-	local framework = opts.framework
-	local model = opts.model
-	print("[llm] Calling " .. model)
+    local replace = opts.replace
+    local framework = opts.framework
+    local model = opts.model
+    vim.notify("[llm] Calling " .. tostring(model), vim.log.levels.INFO)
 	local system_prompt = opts.system_prompt or "Please configure your system prompt."
 
-	local args = make_curl_args_fn(opts, prompt, system_prompt)
+    local args = make_curl_args_fn(opts, prompt, system_prompt)
+    if not args or (type(args) == "table" and #args == 0) then
+        vim.notify("LLM: request builder returned no arguments; skipping invocation", vim.log.levels.WARN)
+        return
+    end
 
 	if active_job then
 		dbg("shutting down previous job")
@@ -379,22 +431,24 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 	dbg("starting curl job…")
 	active_job:start()
 
-	vim.api.nvim_create_autocmd("User", {
-		group = group,
-		pattern = "LLM_Escape",
-		callback = function()
-			if active_job then
-				active_job:shutdown()
-				print("LLM streaming cancelled")
-				active_job = nil
-				end_anchor()
-				dbg("cancelled by user")
-			end
-		end,
-	})
+    vim.api.nvim_create_autocmd("User", {
+        group = group,
+        pattern = "LLM_Escape",
+        callback = function()
+            if active_job then
+                active_job:shutdown()
+                vim.notify("LLM streaming cancelled", vim.log.levels.INFO)
+                active_job = nil
+                end_anchor()
+                dbg("cancelled by user")
+            end
+        end,
+    })
 
-	vim.api.nvim_set_keymap("n", "<Esc>", ":doautocmd User LLM_Escape<CR>", { noremap = true, silent = true })
-	return active_job
+    -- Buffer-local escape mapping to avoid global override
+    local bufnr = vim.api.nvim_get_current_buf()
+    pcall(vim.keymap.set, "n", "<Esc>", ":doautocmd User LLM_Escape<CR>", { buffer = bufnr, noremap = true, silent = true })
+    return active_job
 end
 
 function M.reset_message_buffers()

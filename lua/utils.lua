@@ -20,21 +20,34 @@ end
 --
 -- Function to check if a file should be excluded
 function M.should_include_file(filename)
-	-- Check for specific files to exclude
-	if filename == "chat.md" or filename == "notes.md" then
-		return false
-	end
+    if not filename or filename == "" then
+        return false
+    end
+    -- Normalize and get basename
+    local base = filename:gsub("\\", "/"):match("([^/]+)$") or filename
+    local base_l = base:lower()
 
-	-- Check file extension
-	local extension = filename:match("%.([^%.]+)$")
-	if extension then
-		for _, excluded_ext in ipairs(Constants.excluded_extensions) do
-			if excluded_ext:sub(2) == extension then
-				return false
-			end
-		end
-	end
-	return true
+    -- Explicit filename exclusions
+    if base_l == "chat.md" or base_l == "notes.md" then
+        return false
+    end
+
+    -- Excluded list can contain dot extensions (".png") or full filenames ("package-lock.json")
+    for _, ex in ipairs(Constants.excluded_extensions) do
+        local ex_l = tostring(ex):lower()
+        if ex_l:sub(1, 1) == "." then
+            -- Treat as extension match
+            if base_l:sub(-#ex_l) == ex_l then
+                return false
+            end
+        else
+            -- Treat as exact filename match
+            if base_l == ex_l then
+                return false
+            end
+        end
+    end
+    return true
 end
 
 function M.get_all_buffers_text(opts)
@@ -56,24 +69,39 @@ function M.get_all_buffers_text(opts)
 		end
 	end
 
-	if opts.all_buffers then
-		local buffers = vim.api.nvim_list_bufs()
+    local max_bytes = (opts and opts.max_buffer_bytes) or (200 * 1024) -- 200KB default
 
-		for _, buf in ipairs(buffers) do
-			if vim.api.nvim_buf_is_loaded(buf) then
-				process_buffer(buf)
-			end
-		end
-	else
-		if opts.own_buffer then
+    if opts.all_buffers then
+        local buffers = vim.api.nvim_list_bufs()
+
+        for _, buf in ipairs(buffers) do
+            if vim.api.nvim_buf_is_loaded(buf) then
+                local name = vim.api.nvim_buf_get_name(buf)
+                -- size guard
+                local ok, stat = pcall(vim.loop.fs_stat, name)
+                if ok and stat and stat.size and stat.size > max_bytes then
+                    -- skip large buffers
+                else
+                    process_buffer(buf)
+                end
+            end
+        end
+    else
+        if opts.own_buffer then
 			-- Get the current window buffer
 			-- Seems important but I think I'm going to t
 			local buf = vim.api.nvim_get_current_buf()
-			process_buffer(buf)
-		end
-		return table.concat(all_text, "")
-	end
-	return table.concat(all_text, "\n")
+            local name = vim.api.nvim_buf_get_name(buf)
+            local ok, stat = pcall(vim.loop.fs_stat, name)
+            if ok and stat and stat.size and stat.size > max_bytes then
+                -- skip large buffer
+            else
+                process_buffer(buf)
+            end
+        end
+        return table.concat(all_text, "\n")
+    end
+    return table.concat(all_text, "\n")
 end
 
 function M.get_lines_until_cursor()
@@ -127,16 +155,15 @@ end
 
 function M.trim_context(context, max_length)
 	local len = #context
-	if len > max_length then
-		-- Calculate the number of elements to remove
-		local remove_count = len - max_length
-		-- Remove the first `remove_count` elements from the context
-		for _ = 1, remove_count do
-			table.remove(context, 1)
-		end
-		return context
-	end
-	return context
+    if len > max_length then
+        local start_idx = len - max_length + 1
+        local out = {}
+        for i = start_idx, len do
+            out[#out + 1] = context[i]
+        end
+        return out
+    end
+    return context
 end
 
 function M.get_prompt(opts)
@@ -188,9 +215,9 @@ function M.get_prompt(opts)
 			vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
 		end
-	else
-		print("ERROR: YOU MUST HIGHLIGHT THE PROMPT YOU WISH TO SEND!")
-	end
+    else
+        vim.notify("LLM: You must highlight the prompt you wish to send.", vim.log.levels.ERROR)
+    end
 
 	return prompt
 end
