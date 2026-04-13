@@ -592,7 +592,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     end
   end
 
-  local on_exit_common = vim.schedule_wrap(function(code, _)
+  local on_exit_common = vim.schedule_wrap(function(_, code)
     openai_count = 1
 
     if utf8_carry ~= "" then
