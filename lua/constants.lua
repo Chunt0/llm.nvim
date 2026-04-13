@@ -1,18 +1,8 @@
 return {
   models = {
-    openai = "gpt-4o-mini",
+    openai = "gpt-5.4-mini",
     anthropic = "claude-haiku-4-5-20251001",
     ollama = "gemma4:26b",
-  },
-  price = {
-    openai = {
-      gpt_4o = { name = "gpt-4o", input = 2.5, output = 10.0 },
-      gpt_4o_mini = { name = "gpt-4o-mini", input = 0.15, output = 0.6 },
-    },
-    anthropic = {
-      haiku = { name = "claude-haiku-4-5-20251001", input = 0.8, output = 4.0 },
-      sonnet = { name = "claude-3-5-sonnet-latest", input = 3.0, output = 15.0 },
-    },
   },
   api_endpoints = {
     anthropic = "https://api.anthropic.com/v1/messages",
