@@ -10,18 +10,18 @@ local UI = require("ui")
 -- ===== Debug toggle =====
 local DEBUG = false -- set true to spam :messages
 local function dbg(msg)
-	if not DEBUG then
-		return
-	end
-	msg = "[llm] " .. tostring(msg)
-	vim.schedule(function()
-		pcall(vim.notify, msg, vim.log.levels.INFO)
-	end)
-	pcall(vim.api.nvim_echo, { { msg, "None" } }, true, {})
+  if not DEBUG then
+    return
+  end
+  msg = "[llm] " .. tostring(msg)
+  vim.schedule(function()
+    pcall(vim.notify, msg, vim.log.levels.INFO)
+  end)
+  pcall(vim.api.nvim_echo, { { msg, "None" } }, true, {})
 end
 function M.set_debug(on)
-	DEBUG = not not on
-	dbg("DEBUG=" .. tostring(DEBUG))
+  DEBUG = not not on
+  dbg("DEBUG=" .. tostring(DEBUG))
 end
 
 -- ===== Stream anchor =====
@@ -36,69 +36,69 @@ local function start_anchor(bufnr, winid)
   dbg(("anchor start buf=%d row=%d col=%d"):format(bufnr, row - 1, col))
 end
 local function append_at_anchor(txt)
-	if not txt or txt == "" then
-		return
-	end
-	txt = txt:gsub("[\r\b]", "")
-	local sa = stream_anchor and { bufnr = stream_anchor.bufnr, id = stream_anchor.id } or nil
-	vim.schedule(function()
-		if not sa or not sa.bufnr or not sa.id or not vim.api.nvim_buf_is_loaded(sa.bufnr) then
-			local bufnr = vim.api.nvim_get_current_buf()
-			local row, col = unpack(vim.api.nvim_win_get_cursor(0))
-			local id = vim.api.nvim_buf_set_extmark(bufnr, NS, row - 1, col, { right_gravity = false })
-			stream_anchor = { bufnr = bufnr, id = id }
-			sa = { bufnr = bufnr, id = id }
-			dbg("anchor recreated")
-		end
-		local ok_pos, pos = pcall(vim.api.nvim_buf_get_extmark_by_id, sa.bufnr, NS, sa.id, {})
-		local row, col
-		if ok_pos and pos and pos[1] ~= nil then
-			row, col = pos[1], pos[2]
-		else
-			local last_row = vim.api.nvim_buf_line_count(sa.bufnr) - 1
-			local last_line = vim.api.nvim_buf_get_lines(sa.bufnr, last_row, last_row + 1, false)[1] or ""
-			row, col = last_row, #last_line
-			pcall(vim.api.nvim_buf_set_extmark, sa.bufnr, NS, row, col, { id = sa.id, right_gravity = false })
-			dbg("anchor moved to EOF")
-		end
-		local lines = vim.split(txt, "\n", { plain = true })
-		pcall(vim.api.nvim_buf_set_text, sa.bufnr, row, col, row, col, lines)
-		local last = lines[#lines]
-		local new_row = row + (#lines - 1)
-		local new_col = (#lines == 1) and (col + #last) or #last
-		pcall(vim.api.nvim_buf_set_extmark, sa.bufnr, NS, new_row, new_col, { id = sa.id, right_gravity = false })
-	end)
+  if not txt or txt == "" then
+    return
+  end
+  txt = txt:gsub("[\r\b]", "")
+  local sa = stream_anchor and { bufnr = stream_anchor.bufnr, id = stream_anchor.id } or nil
+  vim.schedule(function()
+    if not sa or not sa.bufnr or not sa.id or not vim.api.nvim_buf_is_loaded(sa.bufnr) then
+      local bufnr = vim.api.nvim_get_current_buf()
+      local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+      local id = vim.api.nvim_buf_set_extmark(bufnr, NS, row - 1, col, { right_gravity = false })
+      stream_anchor = { bufnr = bufnr, id = id }
+      sa = { bufnr = bufnr, id = id }
+      dbg("anchor recreated")
+    end
+    local ok_pos, pos = pcall(vim.api.nvim_buf_get_extmark_by_id, sa.bufnr, NS, sa.id, {})
+    local row, col
+    if ok_pos and pos and pos[1] ~= nil then
+      row, col = pos[1], pos[2]
+    else
+      local last_row = vim.api.nvim_buf_line_count(sa.bufnr) - 1
+      local last_line = vim.api.nvim_buf_get_lines(sa.bufnr, last_row, last_row + 1, false)[1] or ""
+      row, col = last_row, #last_line
+      pcall(vim.api.nvim_buf_set_extmark, sa.bufnr, NS, row, col, { id = sa.id, right_gravity = false })
+      dbg("anchor moved to EOF")
+    end
+    local lines = vim.split(txt, "\n", { plain = true })
+    pcall(vim.api.nvim_buf_set_text, sa.bufnr, row, col, row, col, lines)
+    local last = lines[#lines]
+    local new_row = row + (#lines - 1)
+    local new_col = (#lines == 1) and (col + #last) or #last
+    pcall(vim.api.nvim_buf_set_extmark, sa.bufnr, NS, new_row, new_col, { id = sa.id, right_gravity = false })
+  end)
 end
 local function end_anchor()
-	stream_anchor = nil
-	dbg("anchor cleared")
+  stream_anchor = nil
+  dbg("anchor cleared")
 end
 
 -- ===== UTF-8 safe write =====
 local utf8_carry = ""
 local function split_complete_utf8(s)
-	if s == "" then
-		return "", ""
-	end
-	local len, i = #s, #s
-	while i > 0 do
-		local b = s:byte(i)
-		if b < 0x80 or b >= 0xC0 then
-			break
-		end
-		i = i - 1
-	end
-	if i == 0 then
-		return "", s
-	end
-	local lead = s:byte(i)
-	local need = (lead < 0xE0 and 1) or (lead < 0xF0 and 2) or (lead < 0xF8 and 3) or 0
-	local have = len - i
-	if have < need then
-		return s:sub(1, i - 1), s:sub(i)
-	else
-		return s, ""
-	end
+  if s == "" then
+    return "", ""
+  end
+  local len, i = #s, #s
+  while i > 0 do
+    local b = s:byte(i)
+    if b < 0x80 or b >= 0xC0 then
+      break
+    end
+    i = i - 1
+  end
+  if i == 0 then
+    return "", s
+  end
+  local lead = s:byte(i)
+  local need = (lead < 0xE0 and 1) or (lead < 0xF0 and 2) or (lead < 0xF8 and 3) or 0
+  local have = len - i
+  if have < need then
+    return s:sub(1, i - 1), s:sub(i)
+  else
+    return s, ""
+  end
 end
 local pending_text = ""
 local response_accum = ""
@@ -246,7 +246,7 @@ function M.make_groq_spec_curl_args(opts, prompt, system_prompt)
   else
     dbg("WARNING: no GROQ_API_KEY found")
   end
-  table.insert(cfg, string.format('data = %q', json))
+  table.insert(cfg, string.format("data = %q", json))
   return { args = args, config = table.concat(cfg, "\n") }
 end
 
@@ -254,9 +254,13 @@ function M.handle_groq_spec_data(chunk, state)
   state = state or { buf = "" }
   Stream.parse_sse_chunk(state, chunk, {
     on_data = function(payload)
-      if payload == "[DONE]" then return end
+      if payload == "[DONE]" then
+        return
+      end
       local ok, obj = pcall(vim.json.decode, payload)
-      if not ok or not obj then return end
+      if not ok or not obj then
+        return
+      end
       local choice = obj.choices and obj.choices[1]
       if choice and choice.delta and choice.delta.content then
         write_safely(choice.delta.content)
@@ -297,7 +301,7 @@ function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
   else
     dbg("WARNING: no ANTHROPIC_API_KEY found")
   end
-  table.insert(cfg, string.format('data = %q', json))
+  table.insert(cfg, string.format("data = %q", json))
   return { args = args, config = table.concat(cfg, "\n") }
 end
 
@@ -305,14 +309,20 @@ function M.handle_anthropic_spec_data(chunk, state)
   state = state or { buf = "" }
   local current_event = nil
   Stream.parse_sse_chunk(state, chunk, {
-    on_event = function(ev) current_event = ev end,
+    on_event = function(ev)
+      current_event = ev
+    end,
     on_data = function(payload)
       local ok, obj = pcall(vim.json.decode, payload)
-      if not ok or not obj then return end
+      if not ok or not obj then
+        return
+      end
       -- content_block_delta carries text deltas
       if (current_event and current_event:match("content_block")) or obj.delta then
         local text = (obj.delta and obj.delta.text) or (obj.delta and obj.delta[1] and obj.delta[1].text)
-        if text and #text > 0 then write_safely(text) end
+        if text and #text > 0 then
+          write_safely(text)
+        end
       end
       if obj.type == "message_stop" or current_event == "message_stop" then
         assistant_message = { role = "assistant", content = "" }
@@ -347,7 +357,7 @@ function M.make_perplexity_spec_curl_args(opts, prompt, system_prompt)
   else
     dbg("WARNING: no PERPLEXITY_API_KEY found")
   end
-  table.insert(cfg, string.format('data = %q', json))
+  table.insert(cfg, string.format("data = %q", json))
   return { args = args, config = table.concat(cfg, "\n") }
 end
 
@@ -355,9 +365,13 @@ function M.handle_perplexity_spec_data(chunk, state)
   state = state or { buf = "" }
   Stream.parse_sse_chunk(state, chunk, {
     on_data = function(payload)
-      if payload == "[DONE]" then return end
+      if payload == "[DONE]" then
+        return
+      end
       local ok, obj = pcall(vim.json.decode, payload)
-      if not ok or not obj then return end
+      if not ok or not obj then
+        return
+      end
       local choice = obj.choices and obj.choices[1]
       if choice and choice.delta and choice.delta.content then
         write_safely(choice.delta.content)
@@ -373,7 +387,7 @@ end
 
 -- ===== Provider: Ollama (JSONL) =====
 function M.make_ollama_spec_curl_args(opts, prompt, _system_prompt)
-  local url = (opts.url and #opts.url > 0) and opts.url or "http://localhost:11434/api/generate"
+  local url = (opts.url and #opts.url > 0) and opts.url or "https://ollama.putty-ai.com/api/generate"
   if opts.messages then
     prompt = render_messages(opts.messages)
   end
@@ -389,7 +403,7 @@ function M.make_ollama_spec_curl_args(opts, prompt, _system_prompt)
     'request = "POST"',
     'header = "Content-Type: application/json"',
     'header = "Accept: application/x-ndjson"',
-    string.format('data = %q', json),
+    string.format("data = %q", json),
   }
   return { args = args, config = table.concat(cfg, "\n") }
 end
@@ -398,53 +412,57 @@ function M.handle_ollama_spec_data(chunk, state)
   state = state or { buf = "" }
   Stream.parse_jsonl_chunk(state, chunk, {
     on_json = function(obj)
-      if obj.response then write_safely(tostring(obj.response)) end
-      if obj.done then assistant_message = { role = "assistant", content = "" } end
+      if obj.response then
+        write_safely(tostring(obj.response))
+      end
+      if obj.done then
+        assistant_message = { role = "assistant", content = "" }
+      end
     end,
   })
 end
 -- ===== OpenAI (Responses API only) =====
 function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
-	local model = opts.model
-	local url = (opts.url and #opts.url > 0) and opts.url or "https://api.openai.com/v1/responses"
-	local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name) or os.getenv("OPENAI_API_KEY")
-	local reasoning_effort = opts.reasoning_effort or "minimal"
+  local model = opts.model
+  local url = (opts.url and #opts.url > 0) and opts.url or "https://api.openai.com/v1/responses"
+  local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name) or os.getenv("OPENAI_API_KEY")
+  local reasoning_effort = opts.reasoning_effort or "minimal"
 
-	dbg("count: " .. openai_count)
+  dbg("count: " .. openai_count)
 
-	-- Build payload
-	local data
-	local instructions = system_prompt
-	if opts.messages then
-		instructions = nil
-	end
-	if openai_count == 0 then
-		data = {
-			model = model,
-			stream = true,
-			input = opts.messages or prompt, -- can be string or messages[]
-			instructions = instructions,
-			reasoning = { effort = reasoning_effort },
-			store = true,
-		}
-	else
-		data = {
-			model = model,
-			stream = true,
-			input = opts.messages or prompt,
-			instructions = instructions,
-			previous_response_id = openai_response_id,
-			reasoning = { effort = reasoning_effort },
-			store = true,
-		}
-	end
-	local json = vim.json.encode(data)
-	dbg(("openai req: url=%s model=%s bytes=%d"):format(url, tostring(model), #json))
-	if DEBUG then
-		-- Print the first 400 chars of the payload
-		local head = json:sub(1, 400)
-		dbg("openai req head: " .. head .. (#json > 400 and " …" or ""))
-	end
+  -- Build payload
+  local data
+  local instructions = system_prompt
+  if opts.messages then
+    instructions = nil
+  end
+  if openai_count == 0 then
+    data = {
+      model = model,
+      stream = true,
+      input = opts.messages or prompt, -- can be string or messages[]
+      instructions = instructions,
+      reasoning = { effort = reasoning_effort },
+      store = true,
+    }
+  else
+    data = {
+      model = model,
+      stream = true,
+      input = opts.messages or prompt,
+      instructions = instructions,
+      previous_response_id = openai_response_id,
+      reasoning = { effort = reasoning_effort },
+      store = true,
+    }
+  end
+  local json = vim.json.encode(data)
+  dbg(("openai req: url=%s model=%s bytes=%d"):format(url, tostring(model), #json))
+  if DEBUG then
+    -- Print the first 400 chars of the payload
+    local head = json:sub(1, 400)
+    dbg("openai req head: " .. head .. (#json > 400 and " …" or ""))
+  end
 
   -- Compose curl args using -K - so secrets are not in argv
   local args = curl_common_args()
@@ -459,7 +477,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
   else
     dbg("WARNING: no OPENAI_API_KEY found")
   end
-  table.insert(config_lines, string.format('data = %q', json))
+  table.insert(config_lines, string.format("data = %q", json))
   local kconfig = table.concat(config_lines, "\n")
 
   return { args = args, config = kconfig }
@@ -469,73 +487,73 @@ function M.handle_openai_spec_data(line)
   if not line then
     return
   end
-	-- Raw SSE line visibility
-	if DEBUG then
-		local preview = line
-		if #preview > 220 then
-			preview = preview:sub(1, 200) .. " … " .. preview:sub(-20)
-		end
-		--dbg(("SSE line(%d): %s"):format(#line, preview:gsub("\r", "\\r"):gsub("\t", "\\t")))
-	end
+  -- Raw SSE line visibility
+  if DEBUG then
+    local preview = line
+    if #preview > 220 then
+      preview = preview:sub(1, 200) .. " … " .. preview:sub(-20)
+    end
+    --dbg(("SSE line(%d): %s"):format(#line, preview:gsub("\r", "\\r"):gsub("\t", "\\t")))
+  end
 
-	-- Ignore comments/heartbeats and 'event:' lines
-	if line:match("^:%s?.*") or line:match("^event:%s*[%w%._-]+%s*$") then
-		return
-	end
+  -- Ignore comments/heartbeats and 'event:' lines
+  if line:match("^:%s?.*") or line:match("^event:%s*[%w%._-]+%s*$") then
+    return
+  end
 
-	-- Typical end sentinel from SSE sources; Responses API doesn't use [DONE] but safe to ignore
-	if line:match("^data:%s*%[DONE%]") then
-		return
-	end
+  -- Typical end sentinel from SSE sources; Responses API doesn't use [DONE] but safe to ignore
+  if line:match("^data:%s*%[DONE%]") then
+    return
+  end
 
-	local payload = line:gsub("^data:%s*", ""):gsub("^%s+", ""):gsub("%s+$", "")
-	if payload == "" then
-		return
-	end
+  local payload = line:gsub("^data:%s*", ""):gsub("^%s+", ""):gsub("%s+$", "")
+  if payload == "" then
+    return
+  end
 
-	local ok, json = pcall(vim.json.decode, payload)
-	if not ok or not json then
-		dbg("JSON decode fail: " .. payload)
-		return
-	end
+  local ok, json = pcall(vim.json.decode, payload)
+  if not ok or not json then
+    dbg("JSON decode fail: " .. payload)
+    return
+  end
 
-	-- Capture response id early
-	if json.response and json.response.id then
-		openai_response_id = json.response.id
-		dbg("response.id=" .. openai_response_id)
-	end
+  -- Capture response id early
+  if json.response and json.response.id then
+    openai_response_id = json.response.id
+    dbg("response.id=" .. openai_response_id)
+  end
 
-	local t = tostring(json.type or "")
+  local t = tostring(json.type or "")
 
-	-- Streaming text delta
-	if (t == "response.output_text.delta" or t:match("%.output_text%.delta$")) and json.delta then
-		write_safely(json.delta)
-		return
-	end
+  -- Streaming text delta
+  if (t == "response.output_text.delta" or t:match("%.output_text%.delta$")) and json.delta then
+    write_safely(json.delta)
+    return
+  end
 
-	-- Final output chunk for that channel
-	if t == "response.output_text.done" or t:match("%.output_text%.done$") then
-		if json.text then
-			assistant_message = { role = "assistant", content = json.text }
-			dbg("Assistant Message: " .. json.text)
-		end
-		return
-	end
+  -- Final output chunk for that channel
+  if t == "response.output_text.done" or t:match("%.output_text%.done$") then
+    if json.text then
+      assistant_message = { role = "assistant", content = json.text }
+      dbg("Assistant Message: " .. json.text)
+    end
+    return
+  end
 
-	if t == "response.completed" then
-		dbg("response.completed")
-		return
-	end
+  if t == "response.completed" then
+    dbg("response.completed")
+    return
+  end
 
-	if t == "response.error" and json.error then
-		dbg("OpenAI error: " .. (json.error.message or vim.inspect(json.error)))
-		return
-	end
+  if t == "response.error" and json.error then
+    dbg("OpenAI error: " .. (json.error.message or vim.inspect(json.error)))
+    return
+  end
 
-	-- Log anything unexpected so we can adapt
-	if DEBUG then
-		--dbg("Unhandled event: " .. vim.inspect(json))
-	end
+  -- Log anything unexpected so we can adapt
+  if DEBUG then
+    --dbg("Unhandled event: " .. vim.inspect(json))
+  end
 end
 
 -- ===== DALL·E (Images) =====
@@ -575,13 +593,15 @@ function M.make_dalle_spec_curl_args(opts, prompt)
   else
     dbg("WARNING: no OPENAI_API_KEY found")
   end
-  table.insert(cfg, string.format('data = %q', json))
+  table.insert(cfg, string.format("data = %q", json))
   return { args = args, config = table.concat(cfg, "\n") }
 end
 
 function M.handle_dalle_spec_data(chunk, state)
   state = state or { buf = "", done = false }
-  if state.done then return end
+  if state.done then
+    return
+  end
   state.buf = (state.buf or "") .. chunk
   local ok, obj = pcall(vim.json.decode, state.buf)
   if not ok or not obj then
@@ -599,7 +619,7 @@ function M.handle_dalle_spec_data(chunk, state)
     return
   end
   local bytes = decode_base64(b64)
-  local dir = vim.fn.stdpath('data') .. "/llm/images"
+  local dir = vim.fn.stdpath("data") .. "/llm/images"
   vim.fn.mkdir(dir, "p")
   local path = string.format("%s/image_%s.png", dir, os.date("%Y%m%d_%H%M%S"))
   local f = io.open(path, "wb")
@@ -621,7 +641,9 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 
   local replace = opts.replace
   local ui_mode = (Config.ui and Config.ui.mode) or "inline"
-  if replace then ui_mode = "inline" end
+  if replace then
+    ui_mode = "inline"
+  end
   opts.ui_mode = ui_mode
 
   local prompt = Utils.get_prompt(opts)
@@ -655,7 +677,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
   response_accum = ""
   local req = make_curl_args_fn(opts, prompt, system_prompt)
   local args, kconfig
-  if type(req) == 'table' and req.args then
+  if type(req) == "table" and req.args then
     args = req.args
     kconfig = req.config -- optional curl -K - body
   else
@@ -666,21 +688,20 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     return
   end
 
-	if active_job then
-		dbg("shutting down previous job")
-		active_job:shutdown()
-		active_job = nil
-	end
+  if active_job then
+    dbg("shutting down previous job")
+    active_job:shutdown()
+    active_job = nil
+  end
 
   start_anchor(target_bufnr, target_win)
 
-
-	local function normalize_chunk(out)
-		if type(out) == "table" then
-			out = table.concat(out, "\n")
-		end
-		return (out or ""):gsub("\r\n", "\n")
-	end
+  local function normalize_chunk(out)
+    if type(out) == "table" then
+      out = table.concat(out, "\n")
+    end
+    return (out or ""):gsub("\r\n", "\n")
+  end
 
   local parser_state = { buf = "" }
   local error_notified = false
@@ -689,14 +710,14 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     if chunk == "" then
       return
     end
-		-- bytes tracked if needed for debugging
-		if DEBUG then
-			local prev = chunk
-			if #prev > 220 then
-				prev = prev:sub(1, 200) .. " … " .. prev:sub(-20)
-			end
-			--dbg(("stdout chunk bytes=%d head/tail: %s"):format(#chunk, prev:gsub("\r", "\\r")))
-		end
+    -- bytes tracked if needed for debugging
+    if DEBUG then
+      local prev = chunk
+      if #prev > 220 then
+        prev = prev:sub(1, 200) .. " … " .. prev:sub(-20)
+      end
+      --dbg(("stdout chunk bytes=%d head/tail: %s"):format(#chunk, prev:gsub("\r", "\\r")))
+    end
 
     -- Support stateful handlers
     local ok = pcall(handle_spec_data_fn, chunk, parser_state)
@@ -706,43 +727,43 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     end
   end
 
-	local on_exit_common = vim.schedule_wrap(function(code, _)
+  local on_exit_common = vim.schedule_wrap(function(code, _)
     openai_count = 1
 
-		if utf8_carry ~= "" then
-			write_safely(utf8_carry)
-			utf8_carry = ""
-		end
+    if utf8_carry ~= "" then
+      write_safely(utf8_carry)
+      utf8_carry = ""
+    end
 
-		if not replace then
-			local bufnr = target_bufnr
-			local last_line = vim.api.nvim_buf_line_count(bufnr) - 1
-			local insert_at = last_line + 1
-			local user_line = "---------------------------User---------------------------"
-			vim.api.nvim_buf_set_lines(bufnr, insert_at, insert_at, false, { "", user_line, "" })
-			pcall(vim.api.nvim_win_set_cursor, target_win, { insert_at + 3, 0 })
-		end
+    if not replace then
+      local bufnr = target_bufnr
+      local last_line = vim.api.nvim_buf_line_count(bufnr) - 1
+      local insert_at = last_line + 1
+      local user_line = "---------------------------User---------------------------"
+      vim.api.nvim_buf_set_lines(bufnr, insert_at, insert_at, false, { "", user_line, "" })
+      pcall(vim.api.nvim_win_set_cursor, target_win, { insert_at + 3, 0 })
+    end
 
-		if not assistant_message and response_accum ~= "" then
-			assistant_message = { role = "assistant", content = response_accum }
-		end
-		if use_memory and assistant_message and assistant_message.content and assistant_message.content ~= "" then
-			Memory.append(mem_bufnr, "assistant", assistant_message.content)
-		end
+    if not assistant_message and response_accum ~= "" then
+      assistant_message = { role = "assistant", content = response_accum }
+    end
+    if use_memory and assistant_message and assistant_message.content and assistant_message.content ~= "" then
+      Memory.append(mem_bufnr, "assistant", assistant_message.content)
+    end
 
-		local user_message = { role = "user", content = prompt }
-		local time = os.date("%Y-%m-%dT%H:%M:%S")
-		local log_entry = {
-			time = time,
-			framework = framework,
-			model = model,
-			user = user_message,
-			assistant = assistant_message,
-		}
-		pcall(Log.log, log_entry)
-		active_job = nil
-		assistant_message = nil
-		end_anchor()
+    local user_message = { role = "user", content = prompt }
+    local time = os.date("%Y-%m-%dT%H:%M:%S")
+    local log_entry = {
+      time = time,
+      framework = framework,
+      model = model,
+      user = user_message,
+      assistant = assistant_message,
+    }
+    pcall(Log.log, log_entry)
+    active_job = nil
+    assistant_message = nil
+    end_anchor()
     if code ~= 0 then
       vim.notify("LLM: request exited with code " .. tostring(code), vim.log.levels.WARN)
     end
@@ -753,97 +774,105 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     command = "curl",
     args = args,
     on_stdout = on_stdout,
-	  on_stderr = function(_, err)
-	    if err and err ~= "" then
-	      -- curl --fail-with-body will dump HTTP errors here
-	      local eprev = err
-	      if #eprev > 400 then
-	        eprev = eprev:sub(1, 380) .. " … " .. eprev:sub(-20)
-	      end
-	      dbg("STDERR: " .. eprev:gsub("\r", "\\r"))
-	      if not error_notified then
-	        local code = extract_error_message(err)
-	        if code then
-	          error_notified = true
-	          notify_http_error(err)
-	        end
-	      end
-	    end
-	  end,
+    on_stderr = function(_, err)
+      if err and err ~= "" then
+        -- curl --fail-with-body will dump HTTP errors here
+        local eprev = err
+        if #eprev > 400 then
+          eprev = eprev:sub(1, 380) .. " … " .. eprev:sub(-20)
+        end
+        dbg("STDERR: " .. eprev:gsub("\r", "\\r"))
+        if not error_notified then
+          local code = extract_error_message(err)
+          if code then
+            error_notified = true
+            notify_http_error(err)
+          end
+        end
+      end
+    end,
     on_exit = on_exit_common,
     enable_handlers = true,
     writer = kconfig,
   })
 
-	dbg("starting curl job…")
-	active_job:start()
+  dbg("starting curl job…")
+  active_job:start()
 
-    vim.api.nvim_create_autocmd("User", {
-        group = group,
-        pattern = "LLM_Escape",
-        callback = function()
-            if active_job then
-                active_job:shutdown()
-                vim.notify("LLM streaming cancelled", vim.log.levels.INFO)
-                active_job = nil
-                end_anchor()
-                dbg("cancelled by user")
-            end
-        end,
-    })
+  vim.api.nvim_create_autocmd("User", {
+    group = group,
+    pattern = "LLM_Escape",
+    callback = function()
+      if active_job then
+        active_job:shutdown()
+        vim.notify("LLM streaming cancelled", vim.log.levels.INFO)
+        active_job = nil
+        end_anchor()
+        dbg("cancelled by user")
+      end
+    end,
+  })
 
-    -- Buffer-local escape mapping to avoid global override
-    local bufnr = vim.api.nvim_get_current_buf()
-  pcall(vim.keymap.set, "n", "<Esc>", ":doautocmd User LLM_Escape<CR>", { buffer = bufnr, noremap = true, silent = true })
+  -- Buffer-local escape mapping to avoid global override
+  local bufnr = vim.api.nvim_get_current_buf()
+  pcall(
+    vim.keymap.set,
+    "n",
+    "<Esc>",
+    ":doautocmd User LLM_Escape<CR>",
+    { buffer = bufnr, noremap = true, silent = true }
+  )
   return active_job
 end
 
 function M.reset_message_buffers()
-	openai_count = 0
-	openai_response_id = ""
-	assistant_message = nil
-	vim.notify("LLM buffers reset", vim.log.levels.INFO)
+  openai_count = 0
+  openai_response_id = ""
+  assistant_message = nil
+  vim.notify("LLM buffers reset", vim.log.levels.INFO)
 end
 
 -- ===== User Commands =====
-pcall(vim.api.nvim_create_user_command, 'LLMCancel', function()
-  vim.api.nvim_exec_autocmds('User', { pattern = 'LLM_Escape' })
-end, { desc = 'Cancel running LLM stream' })
+pcall(vim.api.nvim_create_user_command, "LLMCancel", function()
+  vim.api.nvim_exec_autocmds("User", { pattern = "LLM_Escape" })
+end, { desc = "Cancel running LLM stream" })
 
-pcall(vim.api.nvim_create_user_command, 'LLMReset', function()
+pcall(vim.api.nvim_create_user_command, "LLMReset", function()
   M.reset_message_buffers()
-end, { desc = 'Reset LLM message buffers' })
+end, { desc = "Reset LLM message buffers" })
 
-pcall(vim.api.nvim_create_user_command, 'LLMClear', function()
+pcall(vim.api.nvim_create_user_command, "LLMClear", function()
   Memory.clear()
-  vim.notify('LLM memory cleared', vim.log.levels.INFO)
-end, { desc = 'Clear conversation memory for current buffer' })
+  vim.notify("LLM memory cleared", vim.log.levels.INFO)
+end, { desc = "Clear conversation memory for current buffer" })
 
 -- Generic invoker: :LLMInvoke provider=<openai|groq|anthropic|perplexity|ollama> mode=<invoke|code|chat>
-pcall(vim.api.nvim_create_user_command, 'LLMInvoke', function(cmd)
-  local args = cmd.args or ''
-  local provider = args:match('provider=([%w_%-]+)') or args:match('^([%w_%-]+)') or 'openai'
-  local mode = args:match('mode=([%w_%-]+)') or 'invoke'
-  if mode == 'chat' then mode = 'code_chat' end
+pcall(vim.api.nvim_create_user_command, "LLMInvoke", function(cmd)
+  local args = cmd.args or ""
+  local provider = args:match("provider=([%w_%-]+)") or args:match("^([%w_%-]+)") or "openai"
+  local mode = args:match("mode=([%w_%-]+)") or "invoke"
+  if mode == "chat" then
+    mode = "code_chat"
+  end
   local ok, mod = pcall(require, provider)
   if not ok then
-    vim.notify('LLM: unknown provider '..provider, vim.log.levels.ERROR)
+    vim.notify("LLM: unknown provider " .. provider, vim.log.levels.ERROR)
     return
   end
   local fn = mod[mode]
-  if type(fn) ~= 'function' then
+  if type(fn) ~= "function" then
     fn = mod.invoke
   end
   fn()
-end, { desc = 'Invoke LLM provider', nargs = '*' })
+end, { desc = "Invoke LLM provider", nargs = "*" })
 
-pcall(vim.api.nvim_create_user_command, 'LLMDalle', function()
-  local ok, mod = pcall(require, 'openai')
+pcall(vim.api.nvim_create_user_command, "LLMDalle", function()
+  local ok, mod = pcall(require, "openai")
   if not ok then
-    vim.notify('LLM: openai provider not available', vim.log.levels.ERROR)
+    vim.notify("LLM: openai provider not available", vim.log.levels.ERROR)
     return
   end
   mod.dalle()
-end, { desc = 'Generate image with DALL·E' })
+end, { desc = "Generate image with DALL·E" })
 
 return M
