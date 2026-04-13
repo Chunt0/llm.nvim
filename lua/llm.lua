@@ -8,7 +8,7 @@ local Memory = require("memory")
 local UI = require("ui")
 
 -- ===== Debug toggle =====
-local DEBUG = true -- set true to spam :messages
+local DEBUG = false -- set true to spam :messages
 local function dbg(msg)
   if not DEBUG then
     return
@@ -115,7 +115,6 @@ local function write_safely(chunk)
   if not chunk or chunk == "" then
     return
   end
-  dbg("write_safely: " .. tostring(chunk):sub(1, 80))
   if utf8_carry ~= "" then
     chunk = utf8_carry .. chunk
     utf8_carry = ""
@@ -582,6 +581,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 
   local parser_state = { buf = "" }
   local error_notified = false
+  local stderr_buf = {}
   local function on_stdout(_, out)
     local chunk = normalize_chunk(out)
     if chunk == "" then
@@ -604,39 +604,47 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
       utf8_carry = ""
     end
 
-    if not replace then
-      local bufnr = target_bufnr
-      local last_line = vim.api.nvim_buf_line_count(bufnr) - 1
-      local insert_at = last_line + 1
-      local user_line = "---------------------------User---------------------------"
-      vim.api.nvim_buf_set_lines(bufnr, insert_at, insert_at, false, { "", user_line, "" })
-      pcall(vim.api.nvim_win_set_cursor, target_win, { insert_at + 3, 0 })
-    end
+    -- Flush any pending text now so its vim.schedule write is queued first.
+    -- Then wrap the separator insertion in another vim.schedule so it runs
+    -- after the text write (Neovim processes scheduled callbacks FIFO).
+    flush_pending()
 
-    if not assistant_message and response_accum ~= "" then
-      assistant_message = { role = "assistant", content = response_accum }
-    end
-    if use_memory and assistant_message and assistant_message.content and assistant_message.content ~= "" then
-      Memory.append(mem_bufnr, "assistant", assistant_message.content)
-    end
+    vim.schedule(function()
+      if not replace then
+        local bufnr = target_bufnr
+        local last_line = vim.api.nvim_buf_line_count(bufnr) - 1
+        local insert_at = last_line + 1
+        local user_line = "---------------------------User---------------------------"
+        vim.api.nvim_buf_set_lines(bufnr, insert_at, insert_at, false, { "", user_line, "" })
+        pcall(vim.api.nvim_win_set_cursor, target_win, { insert_at + 3, 0 })
+      end
 
-    local user_message = { role = "user", content = prompt }
-    local time = os.date("%Y-%m-%dT%H:%M:%S")
-    local log_entry = {
-      time = time,
-      framework = framework,
-      model = model,
-      user = user_message,
-      assistant = assistant_message,
-    }
-    pcall(Log.log, log_entry)
-    active_job = nil
-    assistant_message = nil
-    end_anchor()
-    if code ~= 0 then
-      vim.notify("LLM: request exited with code " .. tostring(code), vim.log.levels.WARN)
-    end
-    dbg("job closed")
+      if not assistant_message and response_accum ~= "" then
+        assistant_message = { role = "assistant", content = response_accum }
+      end
+      if use_memory and assistant_message and assistant_message.content and assistant_message.content ~= "" then
+        Memory.append(mem_bufnr, "assistant", assistant_message.content)
+      end
+
+      local user_message = { role = "user", content = prompt }
+      local time = os.date("%Y-%m-%dT%H:%M:%S")
+      local log_entry = {
+        time = time,
+        framework = framework,
+        model = model,
+        user = user_message,
+        assistant = assistant_message,
+      }
+      pcall(Log.log, log_entry)
+      active_job = nil
+      assistant_message = nil
+      end_anchor()
+      if code ~= 0 then
+        local detail = #stderr_buf > 0 and (" — " .. table.concat(stderr_buf, " ")) or ""
+        vim.notify("LLM: request failed (curl " .. tostring(code) .. ")" .. detail, vim.log.levels.WARN)
+      end
+      dbg("job closed")
+    end)
   end)
 
   active_job = Job:new({
@@ -645,11 +653,8 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     on_stdout = on_stdout,
     on_stderr = function(_, err)
       if err and err ~= "" then
-        local eprev = err
-        if #eprev > 400 then
-          eprev = eprev:sub(1, 380) .. " … " .. eprev:sub(-20)
-        end
-        dbg("STDERR: " .. eprev:gsub("\r", "\\r"))
+        dbg("STDERR: " .. err:gsub("\r", "\\r"))
+        table.insert(stderr_buf, err)
         if not error_notified then
           local code = extract_error_message(err)
           if code then
