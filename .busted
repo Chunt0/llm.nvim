@@ -1,0 +1,8 @@
+return {
+  default = {
+    verbose = true,
+    helper  = "tests/busted_helper",
+    lpath   = "lua/?.lua",
+    ROOT    = { "tests/" },
+  }
+}
