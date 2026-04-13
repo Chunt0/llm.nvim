@@ -28,7 +28,7 @@ function P.create(opts)
       model = model,
       system_prompt = prompts.system_prompt,
       replace = false,
-      code_chat = false,
+      code_chat = true,
       all_buffers = false,
       framework = framework,
       temp = vars.temp,

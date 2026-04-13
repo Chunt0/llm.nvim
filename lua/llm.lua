@@ -692,7 +692,8 @@ function M.reset_message_buffers()
   openai_count = 0
   openai_response_id = ""
   assistant_message = nil
-  vim.notify("LLM buffers reset", vim.log.levels.INFO)
+  Memory.clear()
+  vim.notify("LLM session cleared", vim.log.levels.INFO)
 end
 
 -- ===== User Commands =====
