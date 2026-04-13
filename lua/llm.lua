@@ -586,6 +586,9 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     if chunk == "" then
       return
     end
+    -- plenary.job strips newlines; re-add so SSE/JSONL stream parsers can
+    -- detect line boundaries and dispatch on_event/on_data/on_json callbacks.
+    chunk = chunk .. "\n"
     local ok = pcall(handle_spec_data_fn, chunk, parser_state)
     if not ok then
       pcall(handle_spec_data_fn, chunk)
