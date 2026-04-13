@@ -582,10 +582,14 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
   local parser_state = { buf = "" }
   local error_notified = false
   local stderr_buf = {}
+  local stdout_buf = {}   -- collects raw lines for error reporting
   local function on_stdout(_, out)
     local chunk = normalize_chunk(out)
     if chunk == "" then
       return
+    end
+    if #stdout_buf < 6 then
+      table.insert(stdout_buf, chunk)
     end
     -- plenary.job strips newlines; re-add so SSE/JSONL stream parsers can
     -- detect line boundaries and dispatch on_event/on_data/on_json callbacks.
@@ -640,8 +644,8 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
       assistant_message = nil
       end_anchor()
       if code ~= 0 then
-        local detail = #stderr_buf > 0 and (" — " .. table.concat(stderr_buf, " ")) or ""
-        vim.notify("LLM: request failed (curl " .. tostring(code) .. ")" .. detail, vim.log.levels.WARN)
+        local body = #stdout_buf > 0 and ("\nResponse: " .. table.concat(stdout_buf, " ")) or ""
+        vim.notify("LLM: request failed (curl " .. tostring(code) .. ")" .. body, vim.log.levels.WARN)
       end
       dbg("job closed")
     end)
