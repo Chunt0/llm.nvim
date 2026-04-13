@@ -1,121 +1,228 @@
 llm.nvim
 
-Neovim plugin for streaming LLM responses directly into your editor. It supports multiple providers (OpenAI, Groq, Anthropic, Perplexity, Ollama), inline editing, optional chat memory, and image generation with DALL·E.
+Neovim plugin for streaming LLM responses directly into your editor. Supports OpenAI, Anthropic, and Ollama with inline editing, project-level memory, an interactive context picker, optional chat history, and DALL·E image generation.
 
 Features
 - Streaming responses into the current buffer or a float/split scratch buffer.
-- Provider wrappers for OpenAI (Responses), Groq, Anthropic, Perplexity, and Ollama.
-- DALL·E image generation; saves images to disk and reports the file path.
+- Three providers: OpenAI (Responses API), Anthropic (Messages API), Ollama (Chat API).
+- Project memory — write a `llm_memory.md` in your project root; it is injected into every request automatically.
+- Context picker — interactively select open buffers to include in any prompt with `:LLMContextAdd`.
 - Per-buffer conversation memory for code chat (optional, configurable).
-- Log redaction and opt-in logging to stdpath data directory.
+- DALL·E image generation; saves images to disk and reports the file path.
+- Opt-in logging with redaction to `stdpath('data')/llm/logs`.
+- API keys passed via stdin (never exposed in process argv).
 
 Quick Start (lazy.nvim)
+
+Copy `local_config.lua.example` into your Neovim config as a plugin spec and adjust the settings. The example is self-contained — no extra files needed.
+
 ```lua
 return {
   {
     "Chunt0/llm.nvim",
     dependencies = { "nvim-lua/plenary.nvim" },
     config = function()
-      local groq = require("groq")
-      local openai = require("openai")
+      local llm       = require("llm")
+      local openai    = require("openai")
       local anthropic = require("anthropic")
-      local perplexity = require("perplexity")
-      local ollama = require("ollama")
+      local ollama    = require("ollama")
+      local constants = require("constants")
 
-      -- Optional config
-      require("llm_config").setup({
-        ui = { mode = "inline", throttle_ms = 20 },
-        memory = { enabled = true, max_messages = 20 },
-        context = { max_buffer_bytes = 200 * 1024 },
-        logging = { enabled = false, redact = true },
-        network = { max_time = 120, retry = 2 },
-      })
+      -- Pick your models
+      constants.models.openai    = "gpt-4o-mini"
+      constants.models.anthropic = "claude-haiku-4-5-20251001"
+      constants.models.ollama    = "gemma4:26b"
 
-      -- Example keymaps
-      vim.keymap.set({ "n", "v" }, "<leader>J", groq.invoke, { desc = "llm groq" })
-      vim.keymap.set({ "n", "v" }, "<leader>K", anthropic.invoke, { desc = "llm anthropic" })
-      vim.keymap.set({ "n", "v" }, "<leader>L", openai.invoke, { desc = "llm openai" })
-      vim.keymap.set({ "n", "v" }, "<leader>P", perplexity.invoke, { desc = "llm perplexity" })
-      vim.keymap.set({ "n", "v" }, "<leader>O", ollama.invoke, { desc = "llm ollama" })
+      -- Optional: override system/code prompts
+      -- constants.prompts.system_prompt = "You are a helpful assistant."
+
+      -- Optional: tune generation parameters
+      -- constants.vars.temp = 0.7
+
+      -- OpenAI
+      vim.keymap.set({ "n", "v" }, "<leader>oi", openai.invoke,            { desc = "LLM OpenAI: Invoke" })
+      vim.keymap.set({ "n", "v" }, "<leader>oc", openai.code,              { desc = "LLM OpenAI: Code" })
+      vim.keymap.set({ "n", "v" }, "<leader>ot", openai.code_chat,         { desc = "LLM OpenAI: Code chat" })
+      vim.keymap.set({ "n", "v" }, "<leader>oa", openai.code_chat_all_buf, { desc = "LLM OpenAI: Code chat (all buffers)" })
+
+      -- Anthropic
+      vim.keymap.set({ "n", "v" }, "<leader>ai", anthropic.invoke,            { desc = "LLM Anthropic: Invoke" })
+      vim.keymap.set({ "n", "v" }, "<leader>ac", anthropic.code,              { desc = "LLM Anthropic: Code" })
+      vim.keymap.set({ "n", "v" }, "<leader>at", anthropic.code_chat,         { desc = "LLM Anthropic: Code chat" })
+      vim.keymap.set({ "n", "v" }, "<leader>aa", anthropic.code_chat_all_buf, { desc = "LLM Anthropic: Code chat (all buffers)" })
+
+      -- Ollama
+      vim.keymap.set({ "n", "v" }, "<leader>li", ollama.invoke,            { desc = "LLM Ollama: Invoke" })
+      vim.keymap.set({ "n", "v" }, "<leader>lc", ollama.code,              { desc = "LLM Ollama: Code" })
+      vim.keymap.set({ "n", "v" }, "<leader>lt", ollama.code_chat,         { desc = "LLM Ollama: Code chat" })
+      vim.keymap.set({ "n", "v" }, "<leader>la", ollama.code_chat_all_buf, { desc = "LLM Ollama: Code chat (all buffers)" })
+
+      -- Context picker
+      vim.keymap.set({ "n", "v" }, "<leader>zc", "<cmd>LLMContextAdd<CR>",   { desc = "LLM: Toggle buffer in context" })
+      vim.keymap.set("n",          "<leader>zx", "<cmd>LLMContextClear<CR>", { desc = "LLM: Clear context buffers" })
+      vim.keymap.set("n",          "<leader>zl", "<cmd>LLMContextList<CR>",  { desc = "LLM: List context buffers" })
+
+      -- Project memory
+      vim.keymap.set("n", "<leader>zm", "<cmd>LLMMemoryEdit<CR>", { desc = "LLM: Edit llm_memory.md" })
+
+      -- Reset OpenAI conversation state
+      vim.keymap.set({ "n", "v" }, "<leader>zz", llm.reset_message_buffers, { desc = "LLM: Reset message buffers" })
     end,
   },
 }
 ```
 
 Environment Variables
-Set API keys as environment variables:
+
+Set API keys as environment variables before starting Neovim:
 ```
 export OPENAI_API_KEY="..."
-export GROQ_API_KEY="..."
 export ANTHROPIC_API_KEY="..."
-export PERPLEXITY_API_KEY="..."
 ```
 
-If you only have some keys, the others will just not work for their providers.
+Ollama requires no API key. Its endpoint is configured in `constants.api_endpoints.ollama`.
 
-How It Works (Important Code Paths)
-- Core streaming engine: `lua/llm.lua`
-  - Builds provider-specific curl requests.
-  - Streams and parses responses (SSE/JSONL).
-  - Inserts content at a stream anchor in the target buffer.
-  - Handles cancel/reset and logging.
-- Provider wrappers: `lua/openai.lua`, `lua/groq.lua`, `lua/anthropic.lua`, `lua/perplexity.lua`, `lua/ollama.lua`
-  - Small wrappers for invoking provider-specific handlers.
-- Stream parser helpers: `lua/stream.lua`
-  - SSE and JSONL parsing utilities.
-- UI targets: `lua/ui.lua`
-  - Inline, float, or split buffers for output.
-- Conversation memory: `lua/memory.lua`
-  - Per-buffer chat history for `code_chat`.
-- Configuration: `lua/llm_config.lua`
+Providers
 
-Commands
-- `:LLMInvoke provider=<openai|groq|anthropic|perplexity|ollama> mode=<invoke|code|chat>`
-- `:LLMCancel` to stop a running stream
-- `:LLMReset` to clear internal buffers
-- `:LLMClear` to clear per-buffer conversation memory
-- `:LLMDalle` to generate an image (uses visual selection as prompt)
+| Provider  | API style               | Auth env var        |
+|-----------|-------------------------|---------------------|
+| OpenAI    | Responses API (SSE)     | `OPENAI_API_KEY`    |
+| Anthropic | Messages API (SSE)      | `ANTHROPIC_API_KEY` |
+| Ollama    | Chat API (JSONL stream) | none                |
+
+Operation Modes
+
+Every provider exposes five functions that map to the same set of keymaps:
+
+| Function            | What it does                                                         |
+|---------------------|----------------------------------------------------------------------|
+| `invoke`            | Single answer, no memory. Writes response after the selection.       |
+| `code`              | Replaces the visual selection with generated code.                   |
+| `code_all_buf`      | Same as `code`, but all open buffers are sent as context.            |
+| `code_chat`         | Stateful chat with per-buffer conversation memory.                   |
+| `code_chat_all_buf` | Same as `code_chat`, plus all open buffers as context.               |
+
+For all modes, you must first select your prompt in visual mode.
+
+Project Memory
+
+Create a file called `llm_memory.md` in your project root. Its contents are prepended to the system prompt on every request, giving the LLM persistent knowledge about your codebase.
+
+```
+:LLMMemoryEdit   open / create llm_memory.md in a horizontal split
+:LLMMemoryPath   print the full path to the memory file
+```
+
+Example `llm_memory.md`:
+```markdown
+# Project: MyApp
+- Language: TypeScript + React
+- State management: Zustand
+- API: REST, base URL /api/v1
+- Key files: src/store.ts, src/api/client.ts
+- Conventions: camelCase vars, PascalCase components
+```
+
+A template `llm_memory.md` is included in this repo as a starting point.
+
+Context Picker
+
+Selectively inject open buffers into the LLM prompt using an interactive picker.
+
+```
+:LLMContextAdd    open picker — select/deselect buffers ([x] = selected)
+:LLMContextClear  remove all context buffers
+:LLMContextList   show which buffers are currently selected
+```
+
+Selected buffers are included in **all** operation modes:
+- `code` / `code_all_buf` — prepended as `# Code Context:` before the instruction
+- `invoke` — prepended as `# Code Context:` before the question
+- `code_chat` / `code_chat_all_buf` — prepended before any all-buffers context
+
+The picker works with the built-in `vim.ui.select`. If you have Telescope installed with `telescope-ui-select.nvim`, it will use that automatically.
+
+Commands Reference
+
+| Command                              | Description                                    |
+|--------------------------------------|------------------------------------------------|
+| `:LLMInvoke provider=X mode=Y`       | Invoke provider (openai\|anthropic\|ollama)    |
+| `:LLMCancel`                         | Stop the running stream                        |
+| `:LLMReset`                          | Clear OpenAI conversation state                |
+| `:LLMClear`                          | Clear per-buffer conversation memory           |
+| `:LLMDalle`                          | Generate an image (selection = prompt)         |
+| `:LLMMemoryEdit`                     | Open llm_memory.md in a split                 |
+| `:LLMMemoryPath`                     | Print path to the memory file                  |
+| `:LLMContextAdd`                     | Toggle a buffer in/out of LLM context          |
+| `:LLMContextClear`                   | Remove all context buffers                     |
+| `:LLMContextList`                    | List currently selected context buffers        |
 
 Configuration
-Use `require('llm_config').setup{ ... }`.
 
-Options:
-- ui.mode: `"inline" | "float" | "split"`
-- ui.throttle_ms: delay for batching stream writes
-- memory.enabled: enable per-buffer memory (used in code_chat)
-- memory.max_messages: limit stored messages per buffer
-- context.max_buffer_bytes: max size for a buffer to be included in context
-- context.include_filetypes: allowlist of filetypes
-- logging.enabled: opt-in logging
-- logging.redact: redact user/assistant text
-- logging.dir: override log directory
-- network.max_time: curl max time
-- network.retry: curl retry count
+Use `require('llm_config').setup{ ... }` for runtime options. Model names, prompts, and vars are changed by overriding `constants` fields directly (see the example config).
 
-Usage Patterns
-- Invoke (single answer)
-  - Select your prompt in visual mode, then run a provider's `invoke` or use `:LLMInvoke`.
-- Code replace
-  - Select code in visual mode, run `mode=code` to replace the selection with the model output.
-- Code chat
-  - Select a question and run `mode=chat` for context-aware answers. Memory is enabled by default.
-- DALL·E
-  - Select an image prompt and run `:LLMDalle`.
+```lua
+require("llm_config").setup({
+  ui = {
+    mode = "inline",      -- "inline" | "float" | "split"
+    throttle_ms = 20,     -- stream write batching interval (ms)
+  },
+  memory = {
+    enabled = true,
+    max_messages = 20,    -- conversation turns kept per buffer
+  },
+  context = {
+    max_buffer_bytes = 200 * 1024,   -- skip buffers larger than this
+    include_filetypes = nil,          -- e.g. { "lua", "ts", "py" } to allowlist
+  },
+  network = {
+    max_time = 120,   -- curl --max-time (seconds)
+    retry = 2,        -- curl --retry count
+  },
+  logging = {
+    enabled = false,  -- or set LLM_LOG=1 in environment
+    redact = true,    -- truncate user/assistant text in logs
+  },
+})
+```
+
+Code Architecture
+
+```
+lua/
+  llm.lua            Core streaming engine, all provider API implementations,
+                     all user commands.
+  provider.lua       Factory — generates invoke/code/code_chat wrappers.
+  openai.lua         OpenAI provider (uses provider factory + extras).
+  anthropic.lua      Anthropic provider.
+  ollama.lua         Ollama provider.
+  project_memory.lua Loads llm_memory.md and supplies it to the engine.
+  context_picker.lua vim.ui.select picker for per-request buffer selection.
+  utils.lua          Prompt builder, buffer collection, context injection.
+  memory.lua         Per-buffer session conversation history.
+  stream.lua         SSE and JSONL stream parsers.
+  ui.lua             Inline / float / split output target selection.
+  llm_config.lua     Runtime configuration with defaults.
+  constants.lua      Default models, endpoints, prompts, vars.
+  log.lua            Optional JSON logging with redaction.
+```
 
 Logging and Privacy
-- Logging is disabled by default.
-- Enable by setting `LLM_LOG=1` or `logging.enabled = true` in config.
-- Logs are written under `stdpath('data')/llm/logs` and redacted by default.
-
-Security Notes
-- API keys are passed to curl via stdin (`curl -K -`) to keep them out of process argv.
-- Avoid committing keys in config files or scripts.
+- Logging is disabled by default; enable with `LLM_LOG=1` or `logging.enabled = true`.
+- Logs are written to `stdpath('data')/llm/logs/{YYYY-MM-DD}.json`.
+- With `redact = true` (default), user prompts are omitted and assistant responses are truncated.
+- API keys are passed to curl via stdin (`curl -K -`) and never appear in process argv.
 
 Troubleshooting
-- 401/403: API key missing or invalid.
-- 429: Rate limited; try again later.
-- 5xx: Provider error; retry after a short delay.
-- If streaming stalls, try increasing `network.max_time` or using a smaller prompt.
+
+| Symptom                | Cause / Fix                                               |
+|------------------------|-----------------------------------------------------------|
+| 401 / 403              | API key missing or wrong env var name                     |
+| 429                    | Rate limited — wait and retry                             |
+| 5xx                    | Provider outage — retry after a short delay               |
+| Stream stalls          | Increase `network.max_time` or use a shorter prompt       |
+| Ollama not responding  | Verify the endpoint in `constants.api_endpoints.ollama`   |
+| No prompt sent         | You must highlight text in visual mode before invoking    |
 
 Development
 - Lint: `luacheck .`
@@ -123,5 +230,7 @@ Development
 - Tests: `busted -v`
 
 See also
-- `docs/recipes.md` for usage examples
-- `CONTRIBUTING.md` for development guidelines
+- `local_config.lua.example` — full annotated configuration example
+- `llm_memory.md` — project memory template
+- `docs/recipes.md` — usage recipes
+- `CONTRIBUTING.md` — development guidelines

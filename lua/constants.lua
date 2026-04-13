@@ -1,9 +1,7 @@
 return {
   models = {
-    perplexity = "llama-3.1-sonar-large-128k-chat",
     openai = "gpt-5.4-mini",
-    anthropic = "claude-3-5-haiku-latest",
-    groq = "llama-3.3-70b-versatile",
+    anthropic = "claude-haiku-4-5-20251001",
     ollama = "gemma4:26b",
   },
   price = {
@@ -12,19 +10,15 @@ return {
       gpt_4o_mini = { name = "gpt-4o-mini", input = 0.15, output = 0.6 },
     },
     anthropic = {
-      haiku = { name = "claude-3-5-haiku-latest", input = 0.8, output = 4.0 },
+      haiku = { name = "claude-haiku-4-5-20251001", input = 0.8, output = 4.0 },
       sonnet = { name = "claude-3-5-sonnet-latest", input = 3.0, output = 15.0 },
     },
-    perplexity = {},
-    groq = {},
   },
   api_endpoints = {
     anthropic = "https://api.anthropic.com/v1/messages",
     openai = "https://api.openai.com/v1/responses",
-    perplexity = "https://api.perplexity.ai/chat/completions",
     dalle = "https://api.openai.com/v1/images/generations",
-    ollama = "https://ollama.putty-ai.com/api/generate",
-    groq = "https://api.groq.com/openai/v1/chat/completions",
+    ollama = "https://ollama.putty-ai.com/api/chat",
   },
   prompts = {
     system_prompt = "",
