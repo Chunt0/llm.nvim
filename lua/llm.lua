@@ -8,7 +8,7 @@ local Memory = require("memory")
 local UI = require("ui")
 
 -- ===== Debug toggle =====
-local DEBUG = false -- set true to spam :messages
+local DEBUG = true -- set true to spam :messages
 local function dbg(msg)
   if not DEBUG then
     return
@@ -115,6 +115,7 @@ local function write_safely(chunk)
   if not chunk or chunk == "" then
     return
   end
+  dbg("write_safely: " .. tostring(chunk):sub(1, 80))
   if utf8_carry ~= "" then
     chunk = utf8_carry .. chunk
     utf8_carry = ""
