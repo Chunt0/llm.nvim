@@ -319,7 +319,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
   local model = opts.model
   local url = (opts.url and #opts.url > 0) and opts.url or "https://api.openai.com/v1/responses"
   local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name) or os.getenv("OPENAI_API_KEY")
-  local reasoning_effort = opts.reasoning_effort or "minimal"
+  local reasoning_effort = opts.reasoning_effort or "low"
 
   dbg("count: " .. openai_count)
 
