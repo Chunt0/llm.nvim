@@ -223,6 +223,7 @@ function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
     stream = true,
     system = system or system_prompt,
     messages = rest,
+    max_tokens = opts.max_tokens or 4096,
     temperature = opts.temp,
     top_p = opts.top_p,
   }
