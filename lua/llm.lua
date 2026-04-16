@@ -709,6 +709,245 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
   return active_job
 end
 
+-- ===== Diff helpers (exported for testing) =====
+
+--- Splice new_lines into orig at [start_row, end_row) (0-indexed, exclusive end).
+--- Returns a new table — orig is never mutated.
+function M._build_patched(orig, new_lines, start_row, end_row)
+  local out = {}
+  for i = 1, start_row         do out[#out + 1] = orig[i] end
+  for _, l in ipairs(new_lines) do out[#out + 1] = l       end
+  for i = end_row + 1, #orig   do out[#out + 1] = orig[i] end
+  return out
+end
+
+-- ===== Diff mode =====
+-- Streams the LLM response into a scratch vsplit, then enables Neovim's native
+-- diff highlighting between the original buffer and the proposed replacement.
+-- <leader>la accepts (writes new lines into the original buffer).
+-- <leader>lr rejects (closes the scratch window, original is untouched).
+function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_data_fn)
+  vim.api.nvim_clear_autocmds({ group = group })
+
+  local sel = Utils.get_visual_info()
+  if not sel then
+    vim.notify("LLM: highlight the code to diff.", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Exit visual mode before splitting.
+  vim.api.nvim_feedkeys(
+    vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false
+  )
+
+  local original_bufnr = vim.api.nvim_get_current_buf()
+  local original_win   = vim.api.nvim_get_current_win()
+  local framework      = opts.framework
+  local model          = opts.model
+
+  vim.notify("[llm] Calling " .. tostring(model) .. " (diff mode)", vim.log.levels.INFO)
+
+  local system_prompt = opts.system_prompt or ""
+  local ok_pm, pm = pcall(require, "project_memory")
+  if ok_pm then
+    local mem = pm.load()
+    if mem and mem ~= "" then
+      system_prompt = "# Project Memory (persistent codebase context):\n" .. mem
+        .. (system_prompt ~= "" and ("\n\n" .. system_prompt) or "")
+    end
+  end
+
+  local sel_text = table.concat(sel.lines, "\n")
+  local ok_cp, ContextPicker = pcall(require, "context_picker")
+  local ctx_text = ok_cp and ContextPicker.get_text() or nil
+  local code_instruction = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE.\n"
+    .. "ONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE A CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. "
+    .. "IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IMPROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY.\n\n"
+    .. "Here is your prompt:\n" .. sel_text
+  local prompt = ctx_text
+    and ("# Code Context:\n" .. ctx_text .. "\n\n" .. code_instruction)
+    or code_instruction
+
+  local target      = UI.open_diff(original_win)
+  local scratch_bufnr = target.bufnr
+  local scratch_win   = target.win
+
+  response_accum = ""
+  start_anchor(scratch_bufnr, scratch_win)
+
+  local req = make_curl_args_fn(opts, prompt, system_prompt)
+  local args, kconfig
+  if type(req) == "table" and req.args then
+    args, kconfig = req.args, req.config
+  else
+    args = req
+  end
+  if not args or (type(args) == "table" and #args == 0) then
+    vim.notify("LLM: request builder returned no arguments; skipping", vim.log.levels.WARN)
+    pcall(vim.api.nvim_win_close, scratch_win, true)
+    return
+  end
+
+  if active_job then
+    active_job:shutdown()
+    active_job = nil
+  end
+
+  local function normalize_chunk(out)
+    if type(out) == "table" then out = table.concat(out, "\n") end
+    return (out or ""):gsub("\r\n", "\n")
+  end
+
+  local parser_state   = { buf = "" }
+  local error_notified = false
+  local stderr_buf     = {}
+  local stdout_buf     = {}
+
+  local function on_stdout(_, out)
+    local chunk = normalize_chunk(out)
+    if chunk == "" then return end
+    if #stdout_buf < 6 then table.insert(stdout_buf, chunk) end
+    chunk = chunk .. "\n"
+    local ok = pcall(handle_spec_data_fn, chunk, parser_state)
+    if not ok then pcall(handle_spec_data_fn, chunk) end
+  end
+
+  local on_exit = vim.schedule_wrap(function(_, code)
+    if framework == "OPENAI" then
+      provider_state.OPENAI.count = provider_state.OPENAI.count + 1
+    else
+      provider_state.OPENAI = { count = 0, response_id = "" }
+    end
+
+    if utf8_carry ~= "" then write_safely(utf8_carry); utf8_carry = "" end
+    flush_pending()
+
+    vim.schedule(function()
+      if code ~= 0 then
+        local body = #stdout_buf > 0 and ("\nResponse: " .. table.concat(stdout_buf, " ")) or ""
+        vim.notify("LLM: request failed (curl " .. tostring(code) .. ")" .. body, vim.log.levels.WARN)
+        pcall(vim.api.nvim_win_close, scratch_win, true)
+        active_job = nil
+        end_anchor()
+        return
+      end
+
+      -- Capture the streamed replacement, stripping any trailing blank lines.
+      local new_lines = vim.api.nvim_buf_get_lines(scratch_bufnr, 0, -1, false)
+      while #new_lines > 0 and new_lines[#new_lines] == "" do
+        table.remove(new_lines)
+      end
+      if #new_lines == 0 then new_lines = { "" } end
+
+      -- Replace scratch buffer with the full patched file so the diff shows
+      -- only the changed region in context, not the whole file as different.
+      local orig_all = vim.api.nvim_buf_get_lines(original_bufnr, 0, -1, false)
+      local patched  = M._build_patched(orig_all, new_lines, sel.start_row, sel.end_row)
+      vim.api.nvim_buf_set_lines(scratch_bufnr, 0, -1, false, patched)
+
+      -- Scroll both windows to the changed region before enabling diff.
+      pcall(vim.api.nvim_win_set_cursor, original_win, { sel.start_row + 1, 0 })
+      pcall(vim.api.nvim_win_set_cursor, scratch_win,  { sel.start_row + 1, 0 })
+      vim.api.nvim_set_current_win(original_win); vim.cmd("diffthis")
+      vim.api.nvim_set_current_win(scratch_win);  vim.cmd("diffthis")
+
+      local km = Config.keymaps or {}
+      local key_accept = km.diff_accept or "<leader>da"
+      local key_reject = km.diff_reject or "<leader>dr"
+
+      vim.notify("LLM diff ready — " .. key_accept .. ": accept  " .. key_reject .. ": reject", vim.log.levels.INFO)
+
+      local function cleanup(apply)
+        pcall(vim.keymap.del, "n", key_accept, { buffer = original_bufnr })
+        pcall(vim.keymap.del, "n", key_reject, { buffer = original_bufnr })
+        vim.cmd("diffoff!")
+        if apply then
+          vim.api.nvim_buf_set_lines(original_bufnr, sel.start_row, sel.end_row, false, new_lines)
+        end
+        pcall(vim.api.nvim_win_close, scratch_win, true)
+        if vim.api.nvim_win_is_valid(original_win) then
+          vim.api.nvim_set_current_win(original_win)
+          pcall(vim.api.nvim_win_set_cursor, original_win, { sel.start_row + 1, 0 })
+        end
+      end
+
+      for _, bufnr in ipairs({ original_bufnr, scratch_bufnr }) do
+        pcall(vim.keymap.set, "n", key_accept, function() cleanup(true)  end, {
+          buffer = bufnr, nowait = true, silent = true,
+          desc = "LLM diff: accept changes",
+        })
+        pcall(vim.keymap.set, "n", key_reject, function() cleanup(false) end, {
+          buffer = bufnr, nowait = true, silent = true,
+          desc = "LLM diff: reject changes",
+        })
+      end
+
+      -- Tidy up if the user closes the scratch window manually with :q.
+      vim.api.nvim_create_autocmd("BufWipeout", {
+        buffer   = scratch_bufnr,
+        once     = true,
+        callback = function()
+          pcall(vim.cmd,        "diffoff!")
+          local km2 = Config.keymaps or {}
+          pcall(vim.keymap.del, "n", km2.diff_accept or "<leader>da", { buffer = original_bufnr })
+          pcall(vim.keymap.del, "n", km2.diff_reject or "<leader>dr", { buffer = original_bufnr })
+        end,
+      })
+
+      pcall(Log.log, {
+        time      = os.date("%Y-%m-%dT%H:%M:%S"),
+        framework = framework,
+        model     = model,
+        user      = { role = "user",      content = prompt          },
+        assistant = { role = "assistant", content = response_accum  },
+      })
+      active_job        = nil
+      assistant_message = nil
+      end_anchor()
+    end)
+  end)
+
+  active_job = Job:new({
+    command         = "curl",
+    args            = args,
+    on_stdout       = on_stdout,
+    on_stderr       = function(_, err)
+      if err and err ~= "" then
+        dbg("STDERR: " .. err:gsub("\r", "\\r"))
+        table.insert(stderr_buf, err)
+        if not error_notified then
+          local c = extract_error_message(err)
+          if c then error_notified = true; notify_http_error(err) end
+        end
+      end
+    end,
+    on_exit         = on_exit,
+    enable_handlers = true,
+    writer          = kconfig,
+  })
+
+  active_job:start()
+
+  vim.api.nvim_create_autocmd("User", {
+    group   = group,
+    pattern = "LLM_Escape",
+    callback = function()
+      if active_job then
+        active_job:shutdown()
+        vim.notify("LLM diff cancelled", vim.log.levels.INFO)
+        active_job = nil
+        pcall(vim.api.nvim_win_close, scratch_win, true)
+        end_anchor()
+      end
+    end,
+  })
+
+  pcall(vim.keymap.set, "n", "<Esc>", ":doautocmd User LLM_Escape<CR>",
+    { buffer = scratch_bufnr, noremap = true, silent = true })
+
+  return active_job
+end
+
 function M.reset_message_buffers()
   provider_state.OPENAI = { count = 0, response_id = "" }
   assistant_message = nil

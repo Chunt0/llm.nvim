@@ -97,6 +97,19 @@ function P.create(opts)
     }, make_curl, handle_data)
   end
 
+  function M.code_diff()
+    llm.invoke_llm_and_stream_into_diff({
+      url              = url,
+      model            = model,
+      api_key_name     = api_key_name,
+      system_prompt    = prompts.code_prompt,
+      framework        = framework,
+      temp             = vars.temp,
+      presence_penalty = vars.presence_penalty,
+      top_p            = vars.top_p,
+    }, make_curl, handle_data)
+  end
+
   return M
 end
 

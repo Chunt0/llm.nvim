@@ -91,30 +91,44 @@ return {
 			vim.keymap.set("n", "<leader>zl", "<cmd>LLMContextList<CR>", { desc = "LLM: List context buffers" })
 
 			-- ── OpenAI ──────────────────────────────────────────────────────
-			--   i  invoke         Ask a question (single turn, no memory)
-			--   c  code           Replace visual selection with generated code
-			--   b  code_all_buf   Code — all open buffers as context
-			--   t  code_chat      Chat with per-buffer conversation memory
+			--   i  invoke             Ask a question (single turn, no memory)
+			--   c  code               Replace visual selection with generated code
+			--   b  code_all_buf       Code — all open buffers as context
+			--   t  code_chat          Chat with per-buffer conversation memory
 			--   a  code_chat_all_buf  Chat + all open buffers as context
-			vim.keymap.set({ "n", "v" }, "<leader>oi", openai.invoke, { desc = "LLM OpenAI: Invoke" })
-			vim.keymap.set({ "n", "v" }, "<leader>oc", openai.code, { desc = "LLM OpenAI: Code (replace selection)" })
-			vim.keymap.set({ "n", "v" }, "<leader>ob", openai.code_all_buf, { desc = "LLM OpenAI: Code (all buffers)" })
-			vim.keymap.set({ "n", "v" }, "<leader>ot", openai.code_chat, { desc = "LLM OpenAI: Code chat" })
+			--   d  code_diff          Propose a change in a diff split; accept or reject
+			vim.keymap.set({ "n", "v" }, "<leader>oi", openai.invoke,            { desc = "LLM OpenAI: Invoke" })
+			vim.keymap.set({ "n", "v" }, "<leader>oc", openai.code,              { desc = "LLM OpenAI: Code (replace selection)" })
+			vim.keymap.set({ "n", "v" }, "<leader>ob", openai.code_all_buf,      { desc = "LLM OpenAI: Code (all buffers)" })
+			vim.keymap.set({ "n", "v" }, "<leader>ot", openai.code_chat,         { desc = "LLM OpenAI: Code chat" })
 			vim.keymap.set({ "n", "v" }, "<leader>oa", openai.code_chat_all_buf, { desc = "LLM OpenAI: Code chat (all buffers)" })
+			vim.keymap.set("v",          "<leader>od", openai.code_diff,         { desc = "LLM OpenAI: Code diff" })
 
 			-- ── Anthropic ────────────────────────────────────────────────────
-			vim.keymap.set({ "n", "v" }, "<leader>ai", anthropic.invoke, { desc = "LLM Anthropic: Invoke" })
-			vim.keymap.set({ "n", "v" }, "<leader>ac", anthropic.code, { desc = "LLM Anthropic: Code (replace selection)" })
-			vim.keymap.set({ "n", "v" }, "<leader>ab", anthropic.code_all_buf, { desc = "LLM Anthropic: Code (all buffers)" })
-			vim.keymap.set({ "n", "v" }, "<leader>at", anthropic.code_chat, { desc = "LLM Anthropic: Code chat" })
+			vim.keymap.set({ "n", "v" }, "<leader>ai", anthropic.invoke,            { desc = "LLM Anthropic: Invoke" })
+			vim.keymap.set({ "n", "v" }, "<leader>ac", anthropic.code,              { desc = "LLM Anthropic: Code (replace selection)" })
+			vim.keymap.set({ "n", "v" }, "<leader>ab", anthropic.code_all_buf,      { desc = "LLM Anthropic: Code (all buffers)" })
+			vim.keymap.set({ "n", "v" }, "<leader>at", anthropic.code_chat,         { desc = "LLM Anthropic: Code chat" })
 			vim.keymap.set({ "n", "v" }, "<leader>aa", anthropic.code_chat_all_buf, { desc = "LLM Anthropic: Code chat (all buffers)" })
+			vim.keymap.set("v",          "<leader>ad", anthropic.code_diff,         { desc = "LLM Anthropic: Code diff" })
 
 			-- ── Ollama (self-hosted at https://ollama.putty-ai.com) ──────────
-			vim.keymap.set({ "n", "v" }, "<leader>li", ollama.invoke, { desc = "LLM Ollama: Invoke" })
-			vim.keymap.set({ "n", "v" }, "<leader>lc", ollama.code, { desc = "LLM Ollama: Code (replace selection)" })
-			vim.keymap.set({ "n", "v" }, "<leader>lb", ollama.code_all_buf, { desc = "LLM Ollama: Code (all buffers)" })
-			vim.keymap.set({ "n", "v" }, "<leader>lt", ollama.code_chat, { desc = "LLM Ollama: Code chat" })
+			vim.keymap.set({ "n", "v" }, "<leader>li", ollama.invoke,            { desc = "LLM Ollama: Invoke" })
+			vim.keymap.set({ "n", "v" }, "<leader>lc", ollama.code,              { desc = "LLM Ollama: Code (replace selection)" })
+			vim.keymap.set({ "n", "v" }, "<leader>lb", ollama.code_all_buf,      { desc = "LLM Ollama: Code (all buffers)" })
+			vim.keymap.set({ "n", "v" }, "<leader>lt", ollama.code_chat,         { desc = "LLM Ollama: Code chat" })
 			vim.keymap.set({ "n", "v" }, "<leader>la", ollama.code_chat_all_buf, { desc = "LLM Ollama: Code chat (all buffers)" })
+			vim.keymap.set("v",          "<leader>ld", ollama.code_diff,         { desc = "LLM Ollama: Code diff" })
+
+			-- ── Diff accept / reject ─────────────────────────────────────────
+			-- These are active only while a diff split is open (buffer-local).
+			-- Change them here to whatever keys you prefer.
+			require("llm_config").setup({
+				keymaps = {
+					diff_accept = "<leader>da",
+					diff_reject = "<leader>dr",
+				},
+			})
 		end,
 	},
 }

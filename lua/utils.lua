@@ -151,6 +151,22 @@ function M.get_visual_selection()
   end
 end
 
+--- Return the current visual selection as whole lines plus their 0-indexed buffer
+--- row range, or nil when not in a visual mode.
+--- start_row / end_row are in nvim_buf_set_lines terms (0-indexed, exclusive end).
+function M.get_visual_info()
+  local mode = vim.fn.mode()
+  if mode ~= "v" and mode ~= "V" and mode ~= "\22" then
+    return nil
+  end
+  local _, srow, _ = unpack(vim.fn.getpos("v"))
+  local _, erow, _ = unpack(vim.fn.getpos("."))
+  if srow > erow then srow, erow = erow, srow end
+  local lines = vim.api.nvim_buf_get_lines(0, srow - 1, erow, true)
+  if not lines or #lines == 0 then return nil end
+  return { lines = lines, start_row = srow - 1, end_row = erow }
+end
+
 function M.trim_context(context, max_length)
   local len = #context
   if len > max_length then

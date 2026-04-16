@@ -140,6 +140,16 @@ vim = {
     nvim_create_augroup        = function() return 0 end,
     nvim_clear_autocmds        = function() end,
     nvim_create_autocmd        = function() end,
+    nvim_set_current_win       = function() end,
+    nvim_win_set_buf           = function() end,
+    nvim_win_set_cursor        = function() end,
+    nvim_win_close             = function() end,
+    nvim_win_is_valid          = function() return true end,
+    nvim_buf_is_valid          = function() return true end,
+    nvim_list_bufs             = function() return {} end,
+    nvim_feedkeys              = function() end,
+    nvim_replace_termcodes     = function(s) return s end,
+    nvim_put                   = function() end,
   },
 
   fn = {

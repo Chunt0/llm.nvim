@@ -21,6 +21,10 @@ local M = {
     redact = true,
     dir = nil, -- defaults to stdpath('data')..'/llm/logs'
   },
+  keymaps = {
+    diff_accept = "<leader>da",
+    diff_reject = "<leader>dr",
+  },
 }
 
 function M.setup(opts)
