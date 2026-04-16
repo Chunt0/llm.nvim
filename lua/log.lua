@@ -24,14 +24,6 @@ local function ensure_dir(path)
     end
 end
 
-local function safe_decode(json_str)
-    local ok, res = pcall(vim.json.decode, json_str)
-    if ok and type(res) == "table" then
-        return res
-    end
-    return {}
-end
-
 local function maybe_redact(entry)
     if not redact then
         return entry
@@ -53,44 +45,29 @@ local function maybe_redact(entry)
     return copy
 end
 
+-- One JSON object per line, appended — crash-safe and no full-file rewrite.
 function M.log(log_entry)
     local cfg = Config.logging or {}
     if cfg.enabled ~= nil then enabled = cfg.enabled end
-    if cfg.redact ~= nil then redact = cfg.redact end
-    if not enabled then
-        return
-    end
-    local data_dir = cfg.dir or (vim.fn.stdpath('data') .. "/llm/logs/")
-    local date = os.date("%Y-%m-%d")
-    local log_directory = data_dir
-    local log_file_path = log_directory .. date .. ".json"
+    if cfg.redact  ~= nil then redact  = cfg.redact  end
+    if not enabled then return end
 
-    ensure_dir(log_directory)
+    local data_dir = cfg.dir or (vim.fn.stdpath("data") .. "/llm/logs/")
+    local log_file_path = data_dir .. os.date("%Y-%m-%d") .. ".jsonl"
+    ensure_dir(data_dir)
 
-    local log_entries = {}
-    local log_file = io.open(log_file_path, "r")
-    if log_file then
-        local content = log_file:read("*a")
-        if content and content ~= "" then
-            log_entries = safe_decode(content)
-        end
-        log_file:close()
-    end
+    local ok, line = pcall(vim.json.encode, maybe_redact(log_entry))
+    if not ok then return end
 
-    table.insert(log_entries, maybe_redact(log_entry))
-
-    log_file = io.open(log_file_path, "w")
-    if log_file then
-        local ok, out = pcall(vim.json.encode, log_entries)
-        if ok then
-            log_file:write(out)
-        end
-        log_file:close()
-    else
+    local f = io.open(log_file_path, "a")
+    if not f then
         vim.schedule(function()
             vim.notify("LLM log: unable to open log file", vim.log.levels.WARN)
         end)
+        return
     end
+    f:write(line .. "\n")
+    f:close()
 end
 
 return M

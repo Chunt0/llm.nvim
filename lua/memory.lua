@@ -7,6 +7,13 @@ local function get_bufnr(bufnr)
   return bufnr or vim.api.nvim_get_current_buf()
 end
 
+-- Clean up store entries when a buffer is wiped so memory doesn't leak.
+vim.api.nvim_create_autocmd("BufWipeout", {
+  callback = function(ev)
+    store[ev.buf] = nil
+  end,
+})
+
 function M.clear(bufnr)
   store[get_bufnr(bufnr)] = {}
 end
@@ -18,10 +25,12 @@ function M.append(bufnr, role, content)
   table.insert(store[bufnr], { role = role, content = content })
   local max = (Config.memory and Config.memory.max_messages) or 20
   if #store[bufnr] > max then
-    local cut = #store[bufnr] - max
-    for _ = 1, cut do
-      table.remove(store[bufnr], 1)
+    local new = {}
+    local start = #store[bufnr] - max + 1
+    for i = start, #store[bufnr] do
+      new[#new + 1] = store[bufnr][i]
     end
+    store[bufnr] = new
   end
 end
 

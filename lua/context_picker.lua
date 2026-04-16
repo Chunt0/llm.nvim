@@ -23,10 +23,11 @@ function M.get_selected()
 end
 
 --- Open a vim.ui.select picker; selecting an item toggles it in the list.
+--- Only normal file buffers (buftype == "") are shown — no terminals/scratch.
 function M.add()
   local candidates = {}
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_loaded(bufnr) then
+    if vim.api.nvim_buf_is_loaded(bufnr) and vim.bo[bufnr].buftype == "" then
       local name = vim.api.nvim_buf_get_name(bufnr)
       if name and name ~= "" then
         table.insert(candidates, { bufnr = bufnr, name = name })

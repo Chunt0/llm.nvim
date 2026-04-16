@@ -147,7 +147,23 @@ vim = {
     expand      = function() return "" end,
     mkdir       = function() return 1 end,
     stdpath     = function() return "/tmp" end,
+    input       = function() return "" end,
+    getpos      = function() return { 0, 0, 0, 0 } end,
+    mode        = function() return "n" end,
   },
+
+  -- vim.bo[bufnr].key — reads return "" / false, writes are no-ops.
+  bo = setmetatable({}, {
+    __index = function(_, _)
+      return setmetatable({}, {
+        __index    = function(_, k)
+          if k == "swapfile" then return false end
+          return ""
+        end,
+        __newindex = function() end,
+      })
+    end,
+  }),
 
   o        = { columns = 80, lines = 24 },
   log      = { levels = { DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3 } },

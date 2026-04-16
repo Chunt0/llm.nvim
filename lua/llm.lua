@@ -135,8 +135,9 @@ end
 
 -- ===== State =====
 local assistant_message = nil
-local openai_count = 0
-local openai_response_id = ""
+local provider_state = {
+  OPENAI = { count = 0, response_id = "" },
+}
 
 local function curl_common_args()
   local args = { "-sS", "-N", "--no-buffer", "--fail-with-body", "-K", "-" }
@@ -322,14 +323,15 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
   local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name) or os.getenv("OPENAI_API_KEY")
   local reasoning_effort = opts.reasoning_effort or "low"
 
-  dbg("count: " .. openai_count)
+  local oai = provider_state.OPENAI
+  dbg("count: " .. oai.count)
 
   local data
   local instructions = system_prompt
   if opts.messages then
     instructions = nil
   end
-  if openai_count == 0 then
+  if oai.count == 0 then
     data = {
       model = model,
       stream = true,
@@ -344,7 +346,7 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
       stream = true,
       input = opts.messages or prompt,
       instructions = instructions,
-      previous_response_id = openai_response_id,
+      previous_response_id = oai.response_id,
       reasoning = { effort = reasoning_effort },
       store = true,
     }
@@ -393,8 +395,8 @@ function M.handle_openai_spec_data(line)
   end
 
   if json.response and json.response.id then
-    openai_response_id = json.response.id
-    dbg("response.id=" .. openai_response_id)
+    provider_state.OPENAI.response_id = json.response.id
+    dbg("response.id=" .. provider_state.OPENAI.response_id)
   end
 
   local t = tostring(json.type or "")
@@ -602,7 +604,12 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
   end
 
   local on_exit_common = vim.schedule_wrap(function(_, code)
-    openai_count = 1
+    if framework == "OPENAI" then
+      provider_state.OPENAI.count = provider_state.OPENAI.count + 1
+    else
+      -- switching away from OpenAI breaks the response chain; reset its state
+      provider_state.OPENAI = { count = 0, response_id = "" }
+    end
 
     if utf8_carry ~= "" then
       write_safely(utf8_carry)
@@ -703,8 +710,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 end
 
 function M.reset_message_buffers()
-  openai_count = 0
-  openai_response_id = ""
+  provider_state.OPENAI = { count = 0, response_id = "" }
   assistant_message = nil
   Memory.clear()
   vim.notify("LLM session cleared", vim.log.levels.INFO)

@@ -58,12 +58,14 @@ function M.get_all_buffers_text(opts)
 
   local function process_buffer(buf)
     local filename = vim.api.nvim_buf_get_name(buf)
-    if M.should_include_file(filename) then
-      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-      table.insert(all_text, "File: " .. filename)
-      table.insert(all_text, table.concat(lines, "\n"))
-      table.insert(all_text, "\n---\n")
-    end
+    if not M.should_include_file(filename) then return end
+    -- Skip buffers whose backing file is too large.
+    local ok, stat = pcall(vim.loop and vim.loop.fs_stat or function() end, filename)
+    if ok and stat and stat.size and stat.size > max_bytes then return end
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    table.insert(all_text, "File: " .. filename)
+    table.insert(all_text, table.concat(lines, "\n"))
+    table.insert(all_text, "\n---\n")
   end
 
   -- Always include context-picker selection first
@@ -93,10 +95,7 @@ function M.get_all_buffers_text(opts)
             goto continue
           end
         end
-        local ok, stat = pcall(vim.loop.fs_stat, name)
-        if not (ok and stat and stat.size and stat.size > max_bytes) then
-          process_buffer(buf)
-        end
+        process_buffer(buf)
         ::continue::
       end
     end
@@ -165,77 +164,86 @@ function M.trim_context(context, max_length)
   return context
 end
 
+local function insert_agent_separator(ui_mode)
+  if ui_mode ~= "inline" then return end
+  local bufnr = vim.api.nvim_get_current_buf()
+  local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
+  local agent_line = "---------------------------Agent---------------------------"
+  vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
+  vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
+end
+
 function M.get_prompt(opts)
   local replace = opts.replace
   local visual_lines = M.get_visual_selection()
-  local prompt = nil
+  local raw_input
 
   if visual_lines then
-    prompt = table.concat(visual_lines, "\n")
+    raw_input = table.concat(visual_lines, "\n")
+  elseif not replace then
+    -- No visual selection: fall back to typed input for chat/invoke modes.
+    local ok_input, input = pcall(vim.fn.input, "LLM prompt: ")
+    if ok_input and input and input ~= "" then
+      raw_input = input
+    end
+  end
 
+  if not raw_input or raw_input == "" then
     if replace then
-      -- Code-replacement mode: inject context-picker files if selected
-      local ok_cp, ContextPicker = pcall(require, "context_picker")
-      local ctx_text = ok_cp and ContextPicker.get_text() or nil
+      vim.notify("LLM: highlight the code you want replaced.", vim.log.levels.ERROR)
+    end
+    return nil
+  end
 
-      local code_instruction = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE.\n"
-        .. "ONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE A CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. "
-        .. "IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IMPROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY.\n\n"
-        .. "Here is your prompt:\n"
-        .. prompt
+  local prompt = raw_input
 
-      if ctx_text then
-        prompt = "# Code Context:\n" .. ctx_text .. "\n\n" .. code_instruction
-      else
-        prompt = code_instruction
-      end
+  if replace then
+    -- Code-replacement mode: inject context-picker files if selected.
+    local ok_cp, ContextPicker = pcall(require, "context_picker")
+    local ctx_text = ok_cp and ContextPicker.get_text() or nil
 
-      -- Delete the visual selection and prepare insertion point
-      vim.api.nvim_command("normal! d")
-      local bufnr = vim.api.nvim_get_current_buf()
-      local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-      vim.api.nvim_buf_set_lines(bufnr, line - 1, line - 1, false, { "" })
-      vim.api.nvim_win_set_cursor(0, { line, 0 })
-      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
+    local code_instruction = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE.\n"
+      .. "ONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE A CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. "
+      .. "IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IMPROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY.\n\n"
+      .. "Here is your prompt:\n"
+      .. prompt
 
-    elseif opts.code_chat then
-      -- Chat mode: insert Agent separator, then build buffer context
-      if opts.ui_mode == "inline" then
-        local bufnr = vim.api.nvim_get_current_buf()
-        local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-        local agent_line = "---------------------------Agent---------------------------"
-        vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
-        vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
-        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
-      end
-      local buffer_text = M.get_all_buffers_text(opts)
-      prompt = "# You are a highly knowledgeable coding assistant. "
-        .. "I will give you the current code context and you will answer my questions with this context to help guide you.\n\n"
-        .. "# Code Context:\n"
-        .. buffer_text
-        .. "\n\n# User question:\n"
-        .. prompt
-
+    if ctx_text then
+      prompt = "# Code Context:\n" .. ctx_text .. "\n\n" .. code_instruction
     else
-      -- Plain invoke mode: insert Agent separator, inject context-picker files if any
-      if opts.ui_mode == "inline" then
-        local bufnr = vim.api.nvim_get_current_buf()
-        local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-        local agent_line = "---------------------------Agent---------------------------"
-        vim.api.nvim_buf_set_lines(bufnr, line, line, false, { "", agent_line, "", "" })
-        vim.api.nvim_win_set_cursor(0, { line + 4, 0 })
-        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
-      end
-      local ok_cp, ContextPicker = pcall(require, "context_picker")
-      if ok_cp then
-        local ctx_text = ContextPicker.get_text()
-        if ctx_text then
-          prompt = "# Code Context:\n" .. ctx_text .. "\n\n# Question:\n" .. prompt
-        end
+      prompt = code_instruction
+    end
+
+    -- Delete the visual selection and prepare insertion point.
+    vim.api.nvim_command("normal! d")
+    local bufnr = vim.api.nvim_get_current_buf()
+    local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
+    vim.api.nvim_buf_set_lines(bufnr, line - 1, line - 1, false, { "" })
+    vim.api.nvim_win_set_cursor(0, { line, 0 })
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
+
+  elseif opts.code_chat then
+    -- Chat mode: separator then buffer context.
+    insert_agent_separator(opts.ui_mode)
+    local buffer_text = M.get_all_buffers_text(opts)
+    prompt = "# You are a highly knowledgeable coding assistant. "
+      .. "I will give you the current code context and you will answer my questions with this context to help guide you.\n\n"
+      .. "# Code Context:\n"
+      .. buffer_text
+      .. "\n\n# User question:\n"
+      .. prompt
+
+  else
+    -- Plain invoke mode: separator then optional context-picker context.
+    insert_agent_separator(opts.ui_mode)
+    local ok_cp, ContextPicker = pcall(require, "context_picker")
+    if ok_cp then
+      local ctx_text = ContextPicker.get_text()
+      if ctx_text then
+        prompt = "# Code Context:\n" .. ctx_text .. "\n\n# Question:\n" .. prompt
       end
     end
-  else
-    vim.notify("LLM: You must highlight the prompt you wish to send.", vim.log.levels.ERROR)
   end
 
   return prompt
