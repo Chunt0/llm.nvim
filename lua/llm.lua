@@ -6,6 +6,7 @@ local Stream = require("stream")
 local Config = require("llm_config")
 local Memory = require("memory")
 local UI = require("ui")
+local Constants = require("constants")
 
 -- ===== Debug toggle =====
 local DEBUG = false -- set true to spam :messages
@@ -760,10 +761,7 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
   local sel_text = table.concat(sel.lines, "\n")
   local ok_cp, ContextPicker = pcall(require, "context_picker")
   local ctx_text = ok_cp and ContextPicker.get_text() or nil
-  local code_instruction = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE.\n"
-    .. "ONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE A CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. "
-    .. "IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IMPROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY.\n\n"
-    .. "Here is your prompt:\n" .. sel_text
+  local code_instruction = Constants.prompts.code_instruction .. sel_text
   local prompt = ctx_text
     and ("# Code Context:\n" .. ctx_text .. "\n\n" .. code_instruction)
     or code_instruction

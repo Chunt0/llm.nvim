@@ -219,11 +219,7 @@ function M.get_prompt(opts)
     local ok_cp, ContextPicker = pcall(require, "context_picker")
     local ctx_text = ok_cp and ContextPicker.get_text() or nil
 
-    local code_instruction = "# You are a dutiful coding assistant, your job is to ONLY WRITE CODE.\n"
-      .. "ONLY RESPOND WITH CODE. NO EXPLANATIONS OUTSIDE A CODE BLOCK. ONLY SIMPLE COMMENTS IN CODE. "
-      .. "IF WHAT IS HIGHLIGHTED IS CODE INFER HOW TO IMPROVE IT AND IMPROVE IT, OTHERWISE FOLLOW THE WRITTEN INSTRUCTIONS PERFECTLY.\n\n"
-      .. "Here is your prompt:\n"
-      .. prompt
+    local code_instruction = Constants.prompts.code_instruction .. prompt
 
     if ctx_text then
       prompt = "# Code Context:\n" .. ctx_text .. "\n\n" .. code_instruction

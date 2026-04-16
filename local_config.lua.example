@@ -29,11 +29,15 @@ return {
 
 			-- ================================================================
 			-- PROMPTS
-			-- system_prompt  → used by invoke / code_chat modes
-			-- code_prompt    → used by code / code_all_buf modes (replace mode)
+			-- system_prompt    → used by invoke / code_chat modes
+			-- code_prompt      → system prompt for code / code_all_buf / code_diff
+			--                    (raw code only, no markdown, no explanations)
+			-- code_instruction → user prompt prefix for code modes; appended
+			--                    before the selected text / instruction
 			-- ================================================================
 			-- constants.prompts.system_prompt = "You are a helpful assistant. Be concise."
-			-- constants.prompts.code_prompt = "Only output valid code. No explanations."
+			-- constants.prompts.code_prompt = "You are a code-replacement engine. Output ONLY raw source code."
+			-- constants.prompts.code_instruction = "OUTPUT ONLY RAW CODE — no markdown fences, no backticks. Task:\n"
 
 			-- ================================================================
 			-- VARS  (generation parameters)

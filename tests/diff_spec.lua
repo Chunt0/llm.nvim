@@ -1,9 +1,11 @@
 -- Tests for diff mode: _build_patched, get_visual_info, llm_config keymaps,
--- provider.create code_diff, and invoke_llm_and_stream_into_diff smoke tests.
+-- provider.create code_diff, invoke_llm_and_stream_into_diff smoke tests,
+-- and constants prompt-engineering assertions.
 
-local llm    = require("llm")
-local utils  = require("utils")
-local Config = require("llm_config")
+local llm      = require("llm")
+local utils    = require("utils")
+local Config   = require("llm_config")
+local Constants = require("constants")
 
 -- ── _build_patched ────────────────────────────────────────────────────────────
 -- Pure function: splice new_lines into orig at [start_row, end_row).
@@ -308,5 +310,48 @@ describe("invoke_llm_and_stream_into_diff", function()
     )
     -- reset state so other tests are not affected
     llm.reset_message_buffers()
+  end)
+end)
+
+-- ── constants prompt engineering ─────────────────────────────────────────────
+
+describe("constants prompt engineering", function()
+  it("code_prompt exists and is a non-empty string", function()
+    assert.is_string(Constants.prompts.code_prompt)
+    assert.is_true(#Constants.prompts.code_prompt > 0)
+  end)
+
+  it("code_instruction exists and is a non-empty string", function()
+    assert.is_string(Constants.prompts.code_instruction)
+    assert.is_true(#Constants.prompts.code_instruction > 0)
+  end)
+
+  it("code_prompt forbids backticks (no triple-backtick examples in the prompt)", function()
+    -- The prompt must tell the model to avoid backticks without itself
+    -- containing code-fence examples that models could pattern-match on.
+    assert.is_nil(Constants.prompts.code_prompt:find("```"), "code_prompt must not contain ```")
+  end)
+
+  it("code_instruction forbids backticks (no triple-backtick examples)", function()
+    assert.is_nil(Constants.prompts.code_instruction:find("```"), "code_instruction must not contain ```")
+  end)
+
+  it("code_prompt mentions no markdown", function()
+    local lower = Constants.prompts.code_prompt:lower()
+    assert.is_truthy(lower:find("markdown") or lower:find("no markdown") or lower:find("raw"),
+      "code_prompt should reference 'markdown' or 'raw'")
+  end)
+
+  it("code_instruction ends with a task separator so the selection is appended cleanly", function()
+    -- The instruction is concatenated with the user's selected text.
+    -- It should end with a newline so there is no run-on.
+    assert.are.equal("\n", Constants.prompts.code_instruction:sub(-1),
+      "code_instruction should end with \\n")
+  end)
+
+  it("code_prompt mentions raw output (not wrapped)", function()
+    local lower = Constants.prompts.code_prompt:lower()
+    assert.is_truthy(lower:find("raw") or lower:find("verbatim") or lower:find("source file"),
+      "code_prompt should describe raw/verbatim output")
   end)
 end)
