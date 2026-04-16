@@ -2,7 +2,7 @@ return {
   models = {
     openai = "gpt-5.4-mini",
     anthropic = "claude-haiku-4-5-20251001",
-    ollama = "gemma4:26b",
+    ollama = "qwen3.6:latest",
   },
   api_endpoints = {
     anthropic = "https://api.anthropic.com/v1/messages",
