@@ -1,4 +1,4 @@
-return {
+local M = {
   models = {
     openai = "gpt-5.4-mini",
     anthropic = "claude-haiku-4-5-20251001",
@@ -90,3 +90,19 @@ return {
     ".o",
   },
 }
+
+function M.setup(opts)
+  if type(opts) ~= "table" then return end
+  local function merge(dst, src)
+    for k, v in pairs(src) do
+      if type(v) == "table" and type(dst[k]) == "table" then
+        merge(dst[k], v)
+      else
+        dst[k] = v
+      end
+    end
+  end
+  merge(M, opts)
+end
+
+return M

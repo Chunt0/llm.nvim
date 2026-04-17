@@ -11,40 +11,94 @@ return {
 			local openai = require("openai")
 			local anthropic = require("anthropic")
 			local ollama = require("ollama")
-			local constants = require("constants")
 
 			-- ================================================================
-			-- MODELS
-			-- Set the model each provider uses.  Change strings to switch.
+			-- CONFIGURATION
+			-- All options are optional — anything omitted keeps its default.
 			-- ================================================================
-			constants.models.openai = "gpt-4o-mini"
-			-- options: "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "gpt-5.4-mini"
+			require("llm_config").setup({
 
-			constants.models.anthropic = "claude-haiku-4-5-20251001"
-			-- options: "claude-haiku-4-5-20251001", "claude-sonnet-4-5-20250929", "claude-sonnet-4-6", "claude-opus-4-6"
+				-- ── Models ───────────────────────────────────────────────────
+				-- Set the model each provider uses.  Omit to keep the default.
+				constants = {
+					models = {
+						openai    = "gpt-4o-mini",
+						-- options: "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "gpt-5.4-mini"
 
-			constants.models.ollama = "gemma4:26b"
-			-- Any model available on https://ollama.putty-ai.com
-			-- Check available models: curl https://ollama.putty-ai.com/api/tags
+						anthropic = "claude-haiku-4-5-20251001",
+						-- options: "claude-haiku-4-5-20251001", "claude-sonnet-4-5-20250929",
+						--          "claude-sonnet-4-6", "claude-opus-4-6"
 
-			-- ================================================================
-			-- PROMPTS
-			-- system_prompt    → used by invoke / code_chat modes
-			-- code_prompt      → system prompt for code / code_all_buf / code_diff
-			--                    (raw code only, no markdown, no explanations)
-			-- code_instruction → user prompt prefix for code modes; appended
-			--                    before the selected text / instruction
-			-- ================================================================
-			-- constants.prompts.system_prompt = "You are a helpful assistant. Be concise."
-			-- constants.prompts.code_prompt = "You are a code-replacement engine. Output ONLY raw source code."
-			-- constants.prompts.code_instruction = "OUTPUT ONLY RAW CODE — no markdown fences, no backticks. Task:\n"
+						ollama    = "gemma4:26b",
+						-- Any model available on your Ollama instance.
+						-- Check available models: curl https://ollama.putty-ai.com/api/tags
+					},
 
-			-- ================================================================
-			-- VARS  (generation parameters)
-			-- ================================================================
-			-- constants.vars.temp = 0.7       -- 0.0–2.0, default 1.0
-			-- constants.vars.top_p = 0.9      -- 0.0–1.0, default nil (provider default)
-			-- constants.vars.presence_penalty = 0  -- -2.0–2.0 (OpenAI/Anthropic)
+					-- ── API Endpoints ─────────────────────────────────────────
+					-- Only change these if you self-host or proxy an API.
+					-- api_endpoints = {
+					--   openai    = "https://api.openai.com/v1/responses",
+					--   anthropic = "https://api.anthropic.com/v1/messages",
+					--   ollama    = "https://ollama.putty-ai.com/api/chat",
+					-- },
+
+					-- ── Prompts ───────────────────────────────────────────────
+					-- system_prompt    → invoke / code_chat modes
+					-- code_prompt      → code / code_all_buf / code_diff modes
+					--                    (raw code only, no markdown, no explanations)
+					-- code_instruction → user prompt prefix for code modes; your selected
+					--                    text is appended after this
+					-- prompts = {
+					--   system_prompt    = "You are a helpful assistant. Be concise.",
+					--   code_prompt      = "You are a code-replacement engine. Output ONLY raw source code.",
+					--   code_instruction = "OUTPUT ONLY RAW CODE — no markdown fences, no backticks. Task:\n",
+					-- },
+
+					-- ── Generation parameters ─────────────────────────────────
+					-- vars = {
+					--   temp             = 0.7,   -- 0.0–2.0, default 1.0
+					--   top_p            = 0.9,   -- 0.0–1.0, default nil (provider default)
+					--   presence_penalty = 0,     -- -2.0–2.0 (OpenAI / Anthropic)
+					-- },
+				},
+
+				-- ── UI ────────────────────────────────────────────────────────
+				ui = {
+					mode        = "inline",  -- "inline" | "float" | "split"
+					throttle_ms = 20,        -- stream write batching interval in ms
+				},
+
+				-- ── Conversation memory ───────────────────────────────────────
+				memory = {
+					enabled      = true,
+					max_messages = 20,  -- turns kept per buffer (older turns dropped)
+				},
+
+				-- ── Context picker ────────────────────────────────────────────
+				context = {
+					max_buffer_bytes  = 200 * 1024,  -- skip buffers larger than this
+					include_filetypes = nil,          -- allowlist e.g. { "lua", "ts", "py" }
+				},
+
+				-- ── Network ───────────────────────────────────────────────────
+				network = {
+					max_time = 120,  -- curl --max-time (seconds)
+					retry    = 2,    -- curl --retry count
+				},
+
+				-- ── Logging ───────────────────────────────────────────────────
+				logging = {
+					enabled = false,  -- or set LLM_LOG=1 in your environment
+					redact  = true,   -- truncate prompts/responses in log entries
+				},
+
+				-- ── Diff accept / reject keymaps ──────────────────────────────
+				-- Active only while a diff split is open (buffer-local).
+				keymaps = {
+					diff_accept = "<leader>da",
+					diff_reject = "<leader>dr",
+				},
+			})
 
 			-- ================================================================
 			-- PROJECT MEMORY  (:LLMMemoryEdit)
@@ -90,9 +144,9 @@ return {
 			vim.keymap.set("n", "<leader>zm", "<cmd>LLMMemoryEdit<CR>", { desc = "LLM: Edit project memory (llm_memory.md)" })
 
 			-- Context picker
-			vim.keymap.set({ "n", "v" }, "<leader>zc", "<cmd>LLMContextAdd<CR>", { desc = "LLM: Toggle buffer in context" })
-			vim.keymap.set("n", "<leader>zx", "<cmd>LLMContextClear<CR>", { desc = "LLM: Clear all context buffers" })
-			vim.keymap.set("n", "<leader>zl", "<cmd>LLMContextList<CR>", { desc = "LLM: List context buffers" })
+			vim.keymap.set({ "n", "v" }, "<leader>zc", "<cmd>LLMContextAdd<CR>",  { desc = "LLM: Toggle buffer in context" })
+			vim.keymap.set("n",          "<leader>zx", "<cmd>LLMContextClear<CR>", { desc = "LLM: Clear all context buffers" })
+			vim.keymap.set("n",          "<leader>zl", "<cmd>LLMContextList<CR>",  { desc = "LLM: List context buffers" })
 
 			-- ── OpenAI ──────────────────────────────────────────────────────
 			--   i  invoke             Ask a question (single turn, no memory)
@@ -123,16 +177,6 @@ return {
 			vim.keymap.set({ "n", "v" }, "<leader>lt", ollama.code_chat,         { desc = "LLM Ollama: Code chat" })
 			vim.keymap.set({ "n", "v" }, "<leader>la", ollama.code_chat_all_buf, { desc = "LLM Ollama: Code chat (all buffers)" })
 			vim.keymap.set("v",          "<leader>ld", ollama.code_diff,         { desc = "LLM Ollama: Code diff" })
-
-			-- ── Diff accept / reject ─────────────────────────────────────────
-			-- These are active only while a diff split is open (buffer-local).
-			-- Change them here to whatever keys you prefer.
-			require("llm_config").setup({
-				keymaps = {
-					diff_accept = "<leader>da",
-					diff_reject = "<leader>dr",
-				},
-			})
 		end,
 	},
 }

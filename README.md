@@ -31,11 +31,20 @@ return {
       local openai    = require("openai")
       local anthropic = require("anthropic")
       local ollama    = require("ollama")
-      local constants = require("constants")
 
-      constants.models.openai    = "gpt-4o-mini"
-      constants.models.anthropic = "claude-haiku-4-5-20251001"
-      constants.models.ollama    = "gemma4:26b"
+      require("llm_config").setup({
+        constants = {
+          models = {
+            openai    = "gpt-4o-mini",
+            anthropic = "claude-haiku-4-5-20251001",
+            ollama    = "gemma4:26b",
+          },
+        },
+        keymaps = {
+          diff_accept = "<leader>da",
+          diff_reject = "<leader>dr",
+        },
+      })
 
       -- OpenAI
       vim.keymap.set({ "n", "v" }, "<leader>oi", openai.invoke,            { desc = "LLM OpenAI: Invoke" })
@@ -67,14 +76,6 @@ return {
       vim.keymap.set("n",          "<leader>zx", "<cmd>LLMContextClear<CR>",{ desc = "LLM: Clear context buffers" })
       vim.keymap.set("n",          "<leader>zl", "<cmd>LLMContextList<CR>", { desc = "LLM: List context buffers" })
       vim.keymap.set("n",          "<leader>zm", "<cmd>LLMMemoryEdit<CR>",  { desc = "LLM: Edit llm_memory.md" })
-
-      -- Diff accept / reject (active only while a diff split is open)
-      require("llm_config").setup({
-        keymaps = {
-          diff_accept = "<leader>da",
-          diff_reject = "<leader>dr",
-        },
-      })
     end,
   },
 }
@@ -88,7 +89,7 @@ export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
-Ollama requires no API key. Its endpoint is set in `constants.api_endpoints.ollama`.
+Ollama requires no API key. Its endpoint defaults to `http://localhost:11434/api/chat` and can be overridden via `constants.api_endpoints.ollama` in `setup()`.
 
 Operation Modes
 ---------------
@@ -229,45 +230,72 @@ Commands Reference
 Configuration
 -------------
 
+Everything is configured through a single `setup()` call. All keys are optional — omitting any value keeps the built-in default.
+
 ```lua
 require("llm_config").setup({
-  ui = {
-    mode = "inline",     -- "inline" | "float" | "split"
-    throttle_ms = 20,    -- stream write batching interval in ms
+
+  -- ── Models, endpoints, prompts, generation params ──────────────────────
+  -- Every field is optional; omit a key to keep its default value.
+  constants = {
+    models = {
+      openai    = "gpt-4o-mini",             -- default: "gpt-5.4-mini"
+      anthropic = "claude-haiku-4-5-20251001", -- default: "claude-haiku-4-5-20251001"
+      ollama    = "gemma4:26b",              -- default: "qwen3.6:latest"
+    },
+    api_endpoints = {
+      openai    = "https://api.openai.com/v1/responses",
+      anthropic = "https://api.anthropic.com/v1/messages",
+      ollama    = "http://localhost:11434/api/chat",
+    },
+    prompts = {
+      system_prompt    = "You are a helpful assistant. Be concise.",
+      code_prompt      = "Only output valid code. No explanations.",
+      -- code_instruction, en2ch_prompt, ch2en_prompt, en2ar_prompt also settable
+    },
+    vars = {
+      temp             = 0.7,   -- 0.0–2.0, default 1.0
+      top_p            = 0.9,   -- 0.0–1.0, default nil
+      presence_penalty = 0,     -- -2.0–2.0, default nil
+    },
   },
+
+  -- ── UI ──────────────────────────────────────────────────────────────────
+  ui = {
+    mode        = "inline",  -- "inline" | "float" | "split"
+    throttle_ms = 20,        -- stream write batching interval in ms
+  },
+
+  -- ── Conversation memory ─────────────────────────────────────────────────
   memory = {
-    enabled = true,
+    enabled      = true,
     max_messages = 20,   -- conversation turns kept per buffer
   },
+
+  -- ── Context picker ──────────────────────────────────────────────────────
   context = {
-    max_buffer_bytes = 200 * 1024,  -- skip buffers larger than this
-    include_filetypes = nil,         -- allowlist e.g. { "lua", "ts", "py" }
+    max_buffer_bytes  = 200 * 1024,  -- skip buffers larger than this
+    include_filetypes = nil,          -- allowlist e.g. { "lua", "ts", "py" }
   },
+
+  -- ── Network ─────────────────────────────────────────────────────────────
   network = {
     max_time = 120,  -- curl --max-time (seconds)
-    retry = 2,       -- curl --retry count
+    retry    = 2,    -- curl --retry count
   },
+
+  -- ── Logging ─────────────────────────────────────────────────────────────
   logging = {
     enabled = false, -- or set LLM_LOG=1 in your environment
-    redact = true,   -- truncate prompts/responses in logs
+    redact  = true,  -- truncate prompts/responses in logs
   },
+
+  -- ── Diff keymaps ────────────────────────────────────────────────────────
   keymaps = {
     diff_accept = "<leader>da",  -- confirm diff and write changes to file
     diff_reject = "<leader>dr",  -- discard diff, leave file unchanged
   },
 })
-```
-
-Model names, prompts, and generation parameters are set directly on the `constants` table:
-
-```lua
-local constants = require("constants")
-constants.models.openai            = "gpt-4o-mini"
-constants.models.anthropic         = "claude-haiku-4-5-20251001"
-constants.models.ollama            = "gemma4:26b"
-constants.prompts.system_prompt    = "You are a helpful assistant. Be concise."
-constants.prompts.code_prompt      = "Only output valid code. No explanations."
-constants.vars.temp                = 0.7
 ```
 
 Providers
@@ -277,7 +305,7 @@ Providers
 |-----------|-------------------------|---------------------|-------|
 | OpenAI    | Responses API (SSE)     | `OPENAI_API_KEY`    | Multi-turn via `previous_response_id` |
 | Anthropic | Messages API (SSE)      | `ANTHROPIC_API_KEY` | |
-| Ollama    | Chat API (JSONL stream) | none                | Endpoint: `constants.api_endpoints.ollama` |
+| Ollama    | Chat API (JSONL stream) | none                | Endpoint settable via `constants.api_endpoints.ollama` in `setup()` |
 
 Architecture
 ------------
@@ -310,7 +338,7 @@ Troubleshooting
 | 429 | Rate limited — wait and retry |
 | Stream stalls | Increase `network.max_time` |
 | Diff split closes immediately | Stream failed — check the error notification for the curl exit code |
-| Ollama not responding | Check `constants.api_endpoints.ollama` |
+| Ollama not responding | Check `constants.api_endpoints.ollama` in `setup()` |
 | Conversation out of sync | `:LLMReset` then `:LLMClear` |
 
 Development

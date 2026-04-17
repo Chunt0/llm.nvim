@@ -29,12 +29,17 @@ local M = {
 
 function M.setup(opts)
   if type(opts) ~= 'table' then return end
+  if opts.constants ~= nil then
+    require("constants").setup(opts.constants)
+  end
   local function merge(dst, src)
     for k, v in pairs(src) do
-      if type(v) == 'table' and type(dst[k]) == 'table' then
-        merge(dst[k], v)
-      else
-        dst[k] = v
+      if k ~= 'constants' then
+        if type(v) == 'table' and type(dst[k]) == 'table' then
+          merge(dst[k], v)
+        else
+          dst[k] = v
+        end
       end
     end
   end
