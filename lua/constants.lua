@@ -15,9 +15,6 @@ local M = {
     code_prompt = "You are a code-replacement engine. Output ONLY raw source code — no markdown, no code fences, no backticks, no triple backticks, no language tags, no explanations, no prose. Your output is written verbatim into a source file, so any non-code character will break the file. Remove any comment that gave you an instruction once you have satisfied it. Keep all other comments. If the input is code, improve it. If the input is an instruction, follow it exactly.",
     code_instruction = "OUTPUT ONLY RAW CODE — no markdown fences, no backticks, no explanations, no prose outside comments. Keep comments minimal. Remove instruction comments once satisfied. Task:\n",
     helpful_prompt = "You are a helpful assistant. What I have sent are my notes so far. You are very curt, yet helpful. You will always adjust your attitude as I request it.",
-    en2ch_prompt = "You are a helpful assistant. Your goal is to translate text. You will never add anything to the text or output and you will never add commentary about the text you generate. Translate the following into Chinese: ",
-    ch2en_prompt = "You are a helpful assistant. Your goal is to translate text. You will never add anything to the text or output and you will never add commentary about the text you generate. Translate the following into English: ",
-    en2ar_prompt = "You are a helpful assistant. Your goal is to translate text. You will never add anything to the text or output and you will never add commentary about the text you generate. Translate the following into Arabic: ",
   },
   vars = {
     temp = 1,

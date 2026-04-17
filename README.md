@@ -232,6 +232,32 @@ Configuration
 
 Everything is configured through a single `setup()` call. All keys are optional — omitting any value keeps the built-in default.
 
+### Prompts
+
+All system prompts are user-configurable via `constants.prompts` in `setup()`:
+
+| Key               | Used by                                          |
+|-------------------|--------------------------------------------------|
+| `system_prompt`   | `invoke`, `code_chat`, `code_chat_all_buf`       |
+| `code_prompt`     | `code`, `code_all_buf`, `code_diff`              |
+| `code_instruction`| prefix added to the user prompt in code modes   |
+| `helpful_prompt`  | helpful/note-taking invocations                 |
+
+```lua
+require("llm_config").setup({
+  constants = {
+    prompts = {
+      system_prompt    = "You are a helpful assistant. Be concise.",
+      code_prompt      = "You are a code-replacement engine. Output ONLY raw source code — no markdown, no fences, no explanations.",
+      code_instruction = "OUTPUT ONLY RAW CODE — no markdown fences, no backticks. Task:\n",
+      helpful_prompt   = "You are a helpful assistant. Be curt and direct.",
+    },
+  },
+})
+```
+
+### Full configuration reference
+
 ```lua
 require("llm_config").setup({
 
@@ -250,8 +276,9 @@ require("llm_config").setup({
     },
     prompts = {
       system_prompt    = "You are a helpful assistant. Be concise.",
-      code_prompt      = "Only output valid code. No explanations.",
-      -- code_instruction, en2ch_prompt, ch2en_prompt, en2ar_prompt also settable
+      code_prompt      = "You are a code-replacement engine. Output ONLY raw source code — no markdown, no fences, no explanations.",
+      code_instruction = "OUTPUT ONLY RAW CODE — no markdown fences, no backticks. Task:\n",
+      helpful_prompt   = "You are a helpful assistant. Be curt and direct.",
     },
     vars = {
       temp             = 0.7,   -- 0.0–2.0, default 1.0

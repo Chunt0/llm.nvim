@@ -43,15 +43,20 @@ return {
 					-- },
 
 					-- ── Prompts ───────────────────────────────────────────────
-					-- system_prompt    → invoke / code_chat modes
-					-- code_prompt      → code / code_all_buf / code_diff modes
-					--                    (raw code only, no markdown, no explanations)
-					-- code_instruction → user prompt prefix for code modes; your selected
-					--                    text is appended after this
+					-- Override any or all prompts. Omit a key to keep the default.
+					--
+					--   system_prompt    → used in invoke and code_chat modes
+					--   code_prompt      → system prompt for code / code_all_buf / code_diff
+					--                      (should instruct raw code output only)
+					--   code_instruction → prefix prepended to the user prompt in code modes;
+					--                      your selected text is appended after this
+					--   helpful_prompt   → system prompt used in helpful/note-taking contexts
+					--
 					-- prompts = {
 					--   system_prompt    = "You are a helpful assistant. Be concise.",
-					--   code_prompt      = "You are a code-replacement engine. Output ONLY raw source code.",
+					--   code_prompt      = "You are a code-replacement engine. Output ONLY raw source code — no markdown, no fences, no explanations.",
 					--   code_instruction = "OUTPUT ONLY RAW CODE — no markdown fences, no backticks. Task:\n",
+					--   helpful_prompt   = "You are a helpful assistant. Be curt and direct.",
 					-- },
 
 					-- ── Generation parameters ─────────────────────────────────
