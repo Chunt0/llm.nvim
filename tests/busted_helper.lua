@@ -270,6 +270,31 @@ vim = {
     return (s:gsub("^%s+", ""):gsub("%s+$", ""))
   end,
 
+  -- Minimal vim.fs.dir over ls; everything is reported as a "file", which is
+  -- all the specs need (flat fixture directories).
+  fs = {
+    dir = function(path)
+      local p = io.popen('ls -a "' .. path .. '" 2>/dev/null')
+      local out = p and p:read("*a") or ""
+      if p then
+        p:close()
+      end
+      local names = {}
+      for name in out:gmatch("[^\n]+") do
+        if name ~= "." and name ~= ".." then
+          table.insert(names, name)
+        end
+      end
+      local i = 0
+      return function()
+        i = i + 1
+        if names[i] then
+          return names[i], "file"
+        end
+      end
+    end,
+  },
+
   split = function(str, sep, opts)
     local result = {}
     if opts and opts.plain then

@@ -1,6 +1,6 @@
 # llm.nvim v2 — In-Editor LLM Agent: Specification
 
-Status: **approved — M1, M3 (read-only agent), and M4 (editing agent) landed 2026-07-03; M2 partially landed (normalized Sink events, fake-transport injection)** · Drafted: 2026-07-02
+Status: **approved — M1, M3 (read-only agent), M4 (editing agent), and the core of M5 (conversational agent panel, session persistence/resume, OpenAI tool support) landed 2026-07-03; M2 partially landed (normalized Sink events, fake-transport injection)** · Drafted: 2026-07-02
 
 ## Decisions (owner-approved)
 
@@ -449,8 +449,17 @@ Ordered so the plugin is never broken in between; each milestone is shippable.
    total) plus a headless-nvim smoke test that drives the real review UI.
    Deviation from the spec: review is one-edit-at-a-time inline in the loop —
    the `]e`/`[e` multi-edit queue UI is deferred to M5.
-5. **M5 — Chat polish & parity**: panel UX (folds, `@file`, resume/persistence),
-   OpenAI tool support, README/docs rewrite, delete compat shims next release.
+5. **M5 — Chat polish & parity** *(core landed 2026-07-03)*: ✅ the agent panel is
+   a conversation — after each turn an input area opens and `<CR>` sends a
+   follow-up with full context (`agent.run{session=…}` continuation; on
+   error/cancel/max_turns the transcript is trimmed so role alternation stays
+   valid, and a dangling user prompt merges on retry); ✅ sessions persist as JSON
+   under `stdpath("data")/llm/sessions` with `:LLMAgentResume` re-rendering the
+   transcript and continuing; ✅ OpenAI Responses API tool support (flat function
+   schemas, transcript replay via `function_call`/`function_call_output` items,
+   `store=false` — no `previous_response_id` fragility in agent mode).
+   Remaining: tool-card folds, `@file` mentions, README repositioning of the
+   panel as the default chat, delete compat shims next release.
 
 ---
 

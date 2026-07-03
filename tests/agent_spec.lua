@@ -110,7 +110,7 @@ describe("Agent.build_request (ollama)", function()
 
   it("rejects unknown providers", function()
     assert.has_error(function()
-      Agent.build_request("openai", { messages = {} })
+      Agent.build_request("gemini", { messages = {} })
     end)
   end)
 end)

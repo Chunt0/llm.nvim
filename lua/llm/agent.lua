@@ -107,6 +107,51 @@ local function ollama_body(opts)
   return body
 end
 
+local function openai_body(opts)
+  -- Responses API: the transcript replays as input items; server-side state
+  -- (previous_response_id) is deliberately unused so a failed request can't
+  -- corrupt the chain.
+  local items = {}
+  for _, m in ipairs(opts.messages) do
+    if m.role == "user" then
+      table.insert(items, { role = "user", content = m.content })
+    elseif m.role == "assistant" then
+      if m.content and m.content ~= "" then
+        table.insert(items, { role = "assistant", content = m.content })
+      end
+      for _, c in ipairs(m.tool_calls or {}) do
+        table.insert(items, {
+          type = "function_call",
+          call_id = c.id,
+          name = c.name,
+          arguments = vim.json.encode(as_object(c.input)),
+        })
+      end
+    elseif m.role == "tool_results" then
+      for _, r in ipairs(m.results) do
+        local output = r.is_error and ("ERROR: " .. r.content) or r.content
+        table.insert(items, { type = "function_call_output", call_id = r.id, output = output })
+      end
+    end
+  end
+  local body = {
+    model = opts.model,
+    stream = true,
+    input = items,
+    store = false,
+  }
+  if opts.system and opts.system ~= "" then
+    body.instructions = opts.system
+  end
+  if opts.max_tokens then
+    body.max_output_tokens = opts.max_tokens
+  end
+  if opts.tools and #opts.tools > 0 then
+    body.tools = opts.tools
+  end
+  return body
+end
+
 --- Build the request body for a provider from a normalized transcript.
 --- opts: { model, system, messages, tools (provider-shaped), max_tokens }
 function M.build_request(provider, opts)
@@ -114,13 +159,38 @@ function M.build_request(provider, opts)
     return anthropic_body(opts)
   elseif provider == "ollama" then
     return ollama_body(opts)
+  elseif provider == "openai" then
+    return openai_body(opts)
   end
   error("agent: unsupported provider '" .. tostring(provider) .. "'")
 end
 
 --- Tool schema wire shape per provider.
 function M.schema_shape(provider)
-  return provider == "anthropic" and "anthropic" or "openai"
+  if provider == "anthropic" then
+    return "anthropic"
+  elseif provider == "openai" then
+    return "openai_responses"
+  end
+  return "openai"
+end
+
+--- Drop trailing transcript entries that would leave the conversation in an
+--- invalid state for the next request (assistant tool_use with no results, or
+--- dangling tool_results) — used after error/cancel/max_turns. A bare user
+--- prompt is kept; the next turn merges into it (see run()).
+function M.trim_incomplete(session)
+  local msgs = session.messages
+  while #msgs > 0 do
+    local last = msgs[#msgs]
+    if last.role == "user" then
+      break
+    end
+    if last.role == "assistant" and not (last.tool_calls and #last.tool_calls > 0) then
+      break
+    end
+    table.remove(msgs)
+  end
 end
 
 -- ===== System prompt ==========================================================
@@ -212,9 +282,10 @@ end
 
 --- Run the agent loop.
 --- opts:
----   provider   "anthropic" | "ollama"
+---   provider   "anthropic" | "ollama" | "openai"
 ---   model, system, max_tokens
 ---   prompt     the user's task
+---   session    existing session to continue (follow-up turns); default fresh
 ---   tools      provider-shaped schema list (default: registry for provider)
 ---   max_turns  default Config.agent.max_turns (25)
 ---   transport  function(body, sink) -> handle?      (default: curl_transport)
@@ -237,11 +308,24 @@ function M.run(opts)
     tools = Tools.schemas(M.schema_shape(opts.provider))
   end
 
-  local session = { messages = { { role = "user", content = opts.prompt } } }
+  -- Continue an existing session (follow-up turns) or start fresh. When the
+  -- transcript already ends with a user message (a previously failed or
+  -- cancelled turn), merge instead of appending — providers reject
+  -- consecutive same-role messages.
+  local session = opts.session or { messages = {} }
+  local last = session.messages[#session.messages]
+  if last and last.role == "user" and type(last.content) == "string" then
+    last.content = last.content .. "\n\n" .. opts.prompt
+  else
+    table.insert(session.messages, { role = "user", content = opts.prompt })
+  end
   local state = { cancelled = false, handle = nil }
   local turn = 0
 
   local function finish(reason)
+    if reason == "error" or reason == "max_turns" then
+      M.trim_incomplete(session)
+    end
     cb(ui, "on_done")(reason, session)
   end
 
@@ -339,6 +423,7 @@ function M.run(opts)
       if state.handle and state.handle.shutdown then
         pcall(state.handle.shutdown, state.handle)
       end
+      M.trim_incomplete(session)
     end,
   }
 end
@@ -360,7 +445,12 @@ end
 --- popts: { provider, url, api_key_name }
 function M.curl_transport(popts)
   local Job = require("plenary.job")
-  local parse = popts.provider == "anthropic" and Stream.anthropic_events or Stream.ollama_events
+  local parse = Stream.ollama_events
+  if popts.provider == "anthropic" then
+    parse = Stream.anthropic_events
+  elseif popts.provider == "openai" then
+    parse = Stream.openai_events
+  end
 
   return function(body, sink)
     local json = vim.json.encode(body)
@@ -375,6 +465,12 @@ function M.curl_transport(popts)
       local key = popts.api_key_name and os.getenv(popts.api_key_name)
       if key and #key > 0 then
         table.insert(cfg, string.format('header = "x-api-key: %s"', key))
+      end
+    elseif popts.provider == "openai" then
+      table.insert(cfg, 'header = "Accept: text/event-stream"')
+      local key = popts.api_key_name and os.getenv(popts.api_key_name)
+      if key and #key > 0 then
+        table.insert(cfg, string.format('header = "Authorization: Bearer %s"', key))
       end
     else
       table.insert(cfg, 'header = "Accept: application/x-ndjson"')
@@ -470,13 +566,206 @@ local function open_panel(title)
   vim.bo[bufnr].swapfile = false
   vim.bo[bufnr].bufhidden = "hide"
   vim.bo[bufnr].filetype = "markdown"
-  pcall(vim.api.nvim_buf_set_name, bufnr, "llm://agent")
+  -- unique per buffer: a second panel must not fail the name collision
+  pcall(vim.api.nvim_buf_set_name, bufnr, "llm://agent/" .. bufnr)
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { title, "" })
   return bufnr, win
 end
 
---- :LLMAgent entry point. args: optional "provider=<name>" plus the prompt;
---- prompts interactively when no prompt text is given.
+local function api_key_for(provider)
+  if provider == "anthropic" then
+    return "ANTHROPIC_API_KEY"
+  elseif provider == "openai" then
+    return "OPENAI_API_KEY"
+  end
+  return nil
+end
+
+--- Render a saved transcript into the panel (resume).
+local function render_transcript(bufnr, session)
+  for _, m in ipairs(session.messages) do
+    if m.role == "user" and type(m.content) == "string" then
+      append_text(bufnr, "## User\n" .. m.content .. "\n\n")
+    elseif m.role == "assistant" then
+      append_text(bufnr, "## Assistant\n")
+      if type(m.content) == "string" and m.content ~= "" then
+        append_text(bufnr, m.content)
+      end
+      for _, c in ipairs(m.tool_calls or {}) do
+        append_text(bufnr, "\n▸ " .. c.name .. "(" .. summarize_input(c.input) .. ")")
+      end
+      append_text(bufnr, "\n\n")
+    end
+  end
+end
+
+--- Open the agent panel around a (new or resumed) session. The panel is a
+--- conversation: after each turn an input area opens at the bottom — type a
+--- follow-up and press <CR> in normal mode to send it.
+--- opts: { provider, model?, prompt?, session? }
+function M.open_session(opts)
+  local provider = opts.provider
+  local model = opts.model or Constants.models[provider]
+  local url = Constants.api_endpoints[provider]
+  local root = Fs.project_root()
+  Tools.setup_builtin()
+  local tool_names = {}
+  for _, t in ipairs(Tools.enabled()) do
+    table.insert(tool_names, t.name)
+  end
+
+  local bufnr = open_panel("# LLM Agent — " .. tostring(model) .. " (" .. provider .. ")")
+  append_text(bufnr, "*<CR> in normal mode sends the input below; Esc cancels a running turn*\n\n")
+
+  local ctl = {
+    session = opts.session, -- nil until the first run returns it
+    running = false,
+    handle = nil,
+    input_start = nil,
+  }
+
+  local function open_input()
+    append_text(bufnr, "\n\n## User\n")
+    ctl.input_start = vim.api.nvim_buf_line_count(bufnr) - 1
+    for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+      pcall(vim.api.nvim_win_set_cursor, win, { ctl.input_start + 1, 0 })
+    end
+  end
+
+  local function save_session()
+    if not ctl.session then
+      return
+    end
+    ctl.session.meta = ctl.session.meta or {}
+    ctl.session.meta.provider = provider
+    ctl.session.meta.model = model
+    pcall(function()
+      require("llm.chat.persist").save(ctl.session)
+    end)
+  end
+
+  local function begin_run(prompt)
+    ctl.running = true
+    append_text(bufnr, "\n\n## Assistant\n")
+    ctl.handle = M.run({
+      provider = provider,
+      model = model,
+      prompt = prompt,
+      root = root,
+      panel_bufnr = bufnr,
+      session = ctl.session,
+      system = M.default_system(root, tool_names),
+      max_tokens = Constants.vars.max_tokens,
+      transport = M.curl_transport({
+        provider = provider,
+        url = url,
+        api_key_name = api_key_for(provider),
+      }),
+      ui = {
+        on_text = function(d)
+          append_text(bufnr, d)
+        end,
+        on_tool_start = function(call)
+          append_text(bufnr, "\n▸ " .. call.name .. "(" .. summarize_input(call.input) .. ")")
+        end,
+        on_tool_done = function(_, res)
+          if res.error then
+            append_text(bufnr, " → ERROR: " .. res.error:match("^([^\n]*)") .. "\n")
+          else
+            local out = tostring(res.result or "")
+            local first = out:match("^([^\n]*)")
+            local n = select(2, out:gsub("\n", "")) + 1
+            append_text(bufnr, " → " .. ((n == 1 and #first <= 60) and first or (n .. " lines")) .. "\n")
+          end
+        end,
+        on_turn = function(n)
+          if n > 1 then
+            append_text(bufnr, "\n")
+          end
+        end,
+        on_done = function(reason, session)
+          ctl.session = session
+          ctl.running = false
+          save_session()
+          if reason == "max_turns" then
+            append_text(bufnr, "\n\n*(stopped: turn limit reached — send a follow-up to continue)*")
+          elseif reason == "max_tokens" then
+            append_text(bufnr, "\n\n*(response truncated: max_tokens reached)*")
+          end
+          open_input()
+        end,
+        on_error = function(err)
+          local msg = err.message or "unknown error"
+          if msg:lower():match("does not support tools") then
+            msg = "model "
+              .. tostring(model)
+              .. " does not support tools — pull a tool-capable model (e.g. qwen3, llama3.1+) or use chat mode"
+          end
+          append_text(bufnr, "\n\n**ERROR:** " .. msg)
+          vim.notify("LLM agent: " .. msg, vim.log.levels.ERROR)
+        end,
+      },
+    })
+    ctl.session = ctl.handle.session
+  end
+
+  local function submit()
+    if ctl.running then
+      vim.notify("LLM agent: a turn is already running — Esc to cancel it first", vim.log.levels.WARN)
+      return
+    end
+    if not ctl.input_start then
+      return
+    end
+    local lines = vim.api.nvim_buf_get_lines(bufnr, ctl.input_start, -1, false)
+    local prompt = vim.trim(table.concat(lines, "\n"))
+    if prompt == "" then
+      return
+    end
+    begin_run(prompt)
+  end
+
+  -- Panel keymaps live for the whole conversation, not per turn.
+  pcall(vim.keymap.set, "n", "<CR>", submit, {
+    buffer = bufnr,
+    noremap = true,
+    silent = true,
+    desc = "LLM agent: send follow-up",
+  })
+  local group = vim.api.nvim_create_augroup("LLM_Agent_" .. bufnr, { clear = true })
+  vim.api.nvim_create_autocmd("User", {
+    group = group,
+    pattern = "LLM_Escape",
+    callback = function()
+      if ctl.running and ctl.handle then
+        ctl.handle.cancel()
+        ctl.running = false
+        save_session()
+        append_text(bufnr, "\n\n*(cancelled)*")
+        open_input()
+        vim.notify("LLM agent cancelled", vim.log.levels.INFO)
+      end
+    end,
+  })
+  pcall(vim.keymap.set, "n", "<Esc>", function()
+    vim.api.nvim_exec_autocmds("User", { pattern = "LLM_Escape" })
+  end, { buffer = bufnr, noremap = true, silent = true })
+
+  if opts.session then
+    render_transcript(bufnr, opts.session)
+    open_input()
+  elseif opts.prompt then
+    append_text(bufnr, "## User\n" .. opts.prompt)
+    begin_run(opts.prompt)
+  else
+    open_input()
+  end
+
+  return ctl
+end
+
+--- :LLMAgent entry point. args: optional "provider=<name>" plus the task;
+--- prompts interactively when no task text is given.
 function M.start(args)
   args = args or ""
   local provider = args:match("provider=([%w_%-]+)") or (Config.agent and Config.agent.provider) or "ollama"
@@ -488,111 +777,44 @@ function M.start(args)
   if prompt == "" then
     return
   end
-  if provider ~= "ollama" and provider ~= "anthropic" then
+  if provider ~= "ollama" and provider ~= "anthropic" and provider ~= "openai" then
     vim.notify(
-      "LLM agent: provider '" .. provider .. "' not supported yet (use ollama or anthropic)",
+      "LLM agent: provider '" .. provider .. "' not supported (use ollama, anthropic, or openai)",
       vim.log.levels.ERROR
     )
     return
   end
+  return M.open_session({ provider = provider, prompt = prompt })
+end
 
-  local model = Constants.models[provider]
-  local url = Constants.api_endpoints[provider]
-  local root = Fs.project_root()
-  Tools.setup_builtin()
-  local tool_names = {}
-  for _, t in ipairs(Tools.enabled()) do
-    table.insert(tool_names, t.name)
+--- :LLMAgentResume — pick a saved session and continue it.
+function M.resume()
+  local Persist = require("llm.chat.persist")
+  local sessions = Persist.list()
+  if #sessions == 0 then
+    vim.notify("LLM agent: no saved sessions", vim.log.levels.INFO)
+    return
   end
-
-  local bufnr = open_panel("# LLM Agent — " .. tostring(model) .. " (" .. provider .. ")")
-  append_text(bufnr, "## User\n" .. prompt .. "\n\n## Assistant\n")
-
-  local handle
-  local group = vim.api.nvim_create_augroup("LLM_Agent", { clear = true })
-  local function cleanup()
-    pcall(vim.keymap.del, "n", "<Esc>", { buffer = bufnr })
-    pcall(vim.api.nvim_clear_autocmds, { group = group })
-  end
-
-  handle = M.run({
-    provider = provider,
-    model = model,
-    prompt = prompt,
-    root = root,
-    panel_bufnr = bufnr,
-    system = M.default_system(root, tool_names),
-    max_tokens = Constants.vars.max_tokens,
-    transport = M.curl_transport({
-      provider = provider,
-      url = url,
-      api_key_name = provider == "anthropic" and "ANTHROPIC_API_KEY" or nil,
-    }),
-    ui = {
-      on_text = function(d)
-        append_text(bufnr, d)
-      end,
-      on_tool_start = function(call)
-        append_text(bufnr, "\n▸ " .. call.name .. "(" .. summarize_input(call.input) .. ")")
-      end,
-      on_tool_done = function(_, res)
-        if res.error then
-          local first = res.error:match("^([^\n]*)")
-          append_text(bufnr, " → ERROR: " .. first .. "\n")
-        else
-          local out = tostring(res.result or "")
-          local first = out:match("^([^\n]*)")
-          local n = select(2, out:gsub("\n", "")) + 1
-          if n == 1 and #first <= 60 then
-            append_text(bufnr, " → " .. first .. "\n")
-          else
-            append_text(bufnr, " → " .. n .. " lines\n")
-          end
-        end
-      end,
-      on_turn = function(n)
-        if n > 1 then
-          append_text(bufnr, "\n")
-        end
-      end,
-      on_done = function(reason)
-        cleanup()
-        if reason == "max_turns" then
-          append_text(bufnr, "\n\n*(stopped: turn limit reached — raise agent.max_turns to continue further)*")
-        elseif reason == "max_tokens" then
-          append_text(bufnr, "\n\n*(response truncated: max_tokens reached)*")
-        elseif reason ~= "error" then
-          append_text(bufnr, "\n\n*(done)*")
-        end
-      end,
-      on_error = function(err)
-        local msg = err.message or "unknown error"
-        if msg:lower():match("does not support tools") then
-          msg = "model "
-            .. tostring(model)
-            .. " does not support tools — pull a tool-capable model (e.g. qwen3, llama3.1+) or use chat mode"
-        end
-        append_text(bufnr, "\n\n**ERROR:** " .. msg)
-        vim.notify("LLM agent: " .. msg, vim.log.levels.ERROR)
-      end,
-    },
-  })
-
-  vim.api.nvim_create_autocmd("User", {
-    group = group,
-    pattern = "LLM_Escape",
-    callback = function()
-      handle.cancel()
-      cleanup()
-      append_text(bufnr, "\n\n*(cancelled)*")
-      vim.notify("LLM agent cancelled", vim.log.levels.INFO)
+  vim.ui.select(sessions, {
+    prompt = "Resume agent session:",
+    format_item = function(s)
+      return s.id .. "  " .. (s.title or "") .. (s.model and ("  [" .. s.model .. "]") or "")
     end,
-  })
-  pcall(vim.keymap.set, "n", "<Esc>", function()
-    vim.api.nvim_exec_autocmds("User", { pattern = "LLM_Escape" })
-  end, { buffer = bufnr, noremap = true, silent = true })
-
-  return handle
+  }, function(choice)
+    if not choice then
+      return
+    end
+    local session, err = Persist.load(choice.path)
+    if not session then
+      vim.notify("LLM agent: " .. tostring(err), vim.log.levels.ERROR)
+      return
+    end
+    M.open_session({
+      provider = session.meta.provider or (Config.agent and Config.agent.provider) or "ollama",
+      model = session.meta.model,
+      session = session,
+    })
+  end)
 end
 
 return M

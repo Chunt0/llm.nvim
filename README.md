@@ -239,11 +239,21 @@ call is shown as a card:
 ▸ read_file(path="lua/llm/init.lua", start_line=620) → 90 lines
 ```
 
-Press `Esc` in the panel (or `:LLMCancel`) to stop. The loop is capped at
+**It's a conversation**: when a turn finishes, an input area opens at the
+bottom of the panel — type a follow-up and press `<CR>` in normal mode to send
+it with the full conversation context. Press `Esc` in the panel (or
+`:LLMCancel`) to stop a running turn. Each request/tool loop is capped at
 `agent.max_turns` (default 25) rounds.
 
+**Sessions persist**: every conversation is saved under
+`stdpath("data")/llm/sessions`. `:LLMAgentResume` lists saved sessions, renders
+the transcript back into a panel, and lets you keep going — across Neovim
+restarts.
+
 **Defaults**: the provider comes from `agent.provider` (default `ollama`) with
-the model from `constants.models`. Ollama models must support tool calling
+the model from `constants.models`; pin one run with
+`:LLMAgent provider=anthropic …` (all three providers — `ollama`, `anthropic`,
+`openai` — support agent mode). Ollama models must support tool calling
 (qwen3, llama3.1+, etc.) — a model without tool support fails immediately with
 a clear error instead of degrading silently.
 
@@ -323,6 +333,7 @@ Commands Reference
 | Command            | Description |
 |--------------------|-------------|
 | `:LLMAgent`        | Run the tool-using agent, e.g. `:LLMAgent provider=ollama find the bug in X` |
+| `:LLMAgentResume`  | Pick a saved agent session and continue the conversation |
 | `:LLMInvoke`       | Generic invoker, e.g. `:LLMInvoke provider=ollama mode=chat` |
 | `:LLMCancel`       | Stop the running stream |
 | `:LLMReset`        | Clear conversation state (incl. OpenAI response-ID chain) |
@@ -429,6 +440,8 @@ lua/llm/
   agent.lua          Agent loop: request building, tool round-trips, review gating, curl transport, panel
   edit/
     apply.lua        Pending edits: str_replace compute, staleness guard, diff review, apply
+  chat/
+    persist.lua      Session save/load/list (stdpath data)/llm/sessions
   tools/
     init.lua         Tool registry: schemas per provider, policy (bash never allow-able), safe dispatch
     read_file.lua    Line-numbered reads (buffer-aware), range + byte caps

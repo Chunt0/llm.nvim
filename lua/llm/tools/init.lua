@@ -48,9 +48,11 @@ function M.enabled()
 end
 
 --- Provider-specific schema list for the request body.
---- shape "anthropic":  { name, description, input_schema }
---- shape "openai":     { type = "function", function = { name, description, parameters } }
---- (Ollama uses the openai function shape.)
+--- shape "anthropic":         { name, description, input_schema }
+--- shape "openai":            { type = "function", function = { name, description, parameters } }
+---                            (chat-completions style — what Ollama consumes)
+--- shape "openai_responses":  { type = "function", name, description, parameters }
+---                            (the Responses API flattens the function object)
 function M.schemas(shape)
   local out = {}
   for _, tool in ipairs(M.enabled()) do
@@ -59,6 +61,13 @@ function M.schemas(shape)
         name = tool.name,
         description = tool.description,
         input_schema = tool.input_schema,
+      })
+    elseif shape == "openai_responses" then
+      table.insert(out, {
+        type = "function",
+        name = tool.name,
+        description = tool.description,
+        parameters = tool.input_schema,
       })
     else
       table.insert(out, {
