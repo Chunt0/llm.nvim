@@ -112,6 +112,7 @@ Shared controls:
 | `<leader>zl` | List context buffers |
 | `<leader>zm` | Edit project memory (`llm_memory.md`) |
 | `<leader>zh` | Run `:checkhealth llm` |
+| `<leader>zg` | Run the agent (prompts for a task) |
 | `<leader>da` / `<leader>dr` | Accept / reject a pending diff (configurable) |
 
 Prefer your own maps? Skip `default_keymaps` and bind the functions directly:

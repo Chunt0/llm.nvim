@@ -19,5 +19,15 @@ Recipes
   - `:LLMContextAdd` to toggle buffers into the context, then use any mode —
     the selected files are prepended as a `# Code Context:` block
 
+- Let the Model Explore the Project Itself (agent)
+  - `:LLMAgent where does the Esc keymap get cleaned up?` (or `<leader>zg`)
+  - The model greps, lists, and reads files on its own — each call shows as a
+    `▸ tool(...)` card in the panel; `Esc` in the panel cancels
+  - Pin a provider per run: `:LLMAgent provider=anthropic summarize the streaming layer`
+
+- Answer Questions About an Unfamiliar Codebase
+  - Open the repo, run `:LLMAgent how does X reach Y?` — the agent is confined
+    to the project root and read-only, so it is safe to point at anything
+
 - Point at a Remote Ollama Server
   - `require("llm").setup({ constants = { api_endpoints = { ollama = "https://my-server.example.com/api/chat" } } })`

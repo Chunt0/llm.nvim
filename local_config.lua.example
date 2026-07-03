@@ -19,7 +19,8 @@ return {
 				-- true registers the full built-in <leader> set:
 				--   <leader>l… Ollama   <leader>a… Anthropic   <leader>o… OpenAI
 				--   (i invoke, c code, b code+bufs, t chat, a chat+bufs, d diff)
-				--   <leader>z… shared: zz reset, zc/zx/zl context, zm memory, zh health
+				--   <leader>z… shared: zz reset, zc/zx/zl context, zm memory, zh health,
+				--              zg agent
 				-- Prefer your own maps? Set false and bind manually (see below).
 				default_keymaps = true,
 
@@ -65,6 +66,19 @@ return {
 					--   reasoning_effort = "low", -- OpenAI Responses reasoning effort
 					-- },
 				},
+
+				-- ── Agent mode (:LLMAgent / <leader>zg) ──────────────────────
+				-- The model explores the project itself with read-only tools
+				-- (read_file / list_files / grep), confined to the project root.
+				agent = {
+					provider = "ollama", -- default provider (the model must support tools)
+					max_turns = 25, -- cap on request/tool rounds per task
+				},
+				-- tools = {
+				--   enabled = { "read_file", "list_files", "grep" },
+				--   policy = { grep = "disabled" }, -- turn individual tools off
+				--   max_result_bytes = 60 * 1024,   -- cap on a single tool result
+				-- },
 
 				-- ── UI ────────────────────────────────────────────────────────
 				ui = {

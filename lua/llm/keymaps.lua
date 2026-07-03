@@ -10,6 +10,7 @@
 --   <leader>zz  reset conversation state      <leader>zc  toggle buffer in context
 --   <leader>zx  clear context buffers         <leader>zl  list context buffers
 --   <leader>zm  edit project memory           <leader>zh  :checkhealth llm
+--   <leader>zg  agent (prompts for a task; provider from agent.provider)
 -- Diff accept/reject default to <leader>da / <leader>dr (config: keymaps.diff_accept/diff_reject).
 
 local M = {}
@@ -44,6 +45,7 @@ function M.apply()
   map("n", "<leader>zl", "<cmd>LLMContextList<CR>", { desc = "LLM: list context buffers" })
   map("n", "<leader>zm", "<cmd>LLMMemoryEdit<CR>", { desc = "LLM: edit project memory" })
   map("n", "<leader>zh", "<cmd>checkhealth llm<CR>", { desc = "LLM: health check" })
+  map("n", "<leader>zg", "<cmd>LLMAgent<CR>", { desc = "LLM: run agent (prompts for a task)" })
 end
 
 return M
