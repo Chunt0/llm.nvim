@@ -1,6 +1,6 @@
 # llm.nvim v2 — In-Editor LLM Agent: Specification
 
-Status: **approved — Milestone 1 (bug fixes + foundation) landed 2026-07-03** · Drafted: 2026-07-02
+Status: **approved — M1 (bug fixes + foundation) and M3 (read-only agent) landed 2026-07-03; M2 partially landed (normalized Sink events, fake-transport injection)** · Drafted: 2026-07-02
 
 ## Decisions (owner-approved)
 
@@ -427,13 +427,17 @@ Ordered so the plugin is never broken in between; each milestone is shippable.
    diff engine with `auto_apply`; `:checkhealth llm`; opt-in default keymaps
    (`default_keymaps = true`); LuaJIT added to CI; tests ported (159 passing) and
    luacheck/stylua clean.
-2. **M2 — Provider contract**: normalized `Request`/`Sink`, session model with
-   role-alternation discipline, fake-transport injection point, mini.test harness +
-   first integration tests, mock e2e server.
-3. **M3 — Read-only agent**: tool registry + `read_file`/`list_files`/`grep`, agent
-   loop (Ollama and Anthropic together — Ollama is the daily driver, Anthropic's
-   documented streaming shape keeps the abstraction honest), tool cards in a minimal
-   chat panel. The agent can answer "where is X handled?" by itself.
+2. **M2 — Provider contract** *(partially landed 2026-07-03)*: ✅ normalized `Sink`
+   stream events (`stream.anthropic_events` / `stream.ollama_events`, chunk-boundary
+   tested), ✅ fake-transport injection point (`agent.run{transport=…}`); ⬜ session
+   model for chat modes, ⬜ mini.test harness + integration tests, ⬜ mock e2e server.
+3. ✅ **M3 — Read-only agent** *(landed 2026-07-03)*: tool registry with per-provider
+   schemas + policy (`lua/llm/tools/`), `read_file`/`list_files`/`grep` with path
+   confinement enforced in `lua/llm/util/fs.lua` (traversal/absolute/symlink escapes +
+   secret-file refusal, table-driven tests), agent loop (`lua/llm/agent.lua`) for
+   Ollama and Anthropic with tool cards in a minimal markdown panel, `:LLMAgent`
+   command, Esc/`:LLMCancel` cancellation, max_turns cap, and fail-fast for Ollama
+   models without tool support. 93 new unit tests (252 total).
 4. **M4 — Editing agent**: `edit_file`/`write_file`/`bash` + pending-edit review
    queue, staleness guards, rejection feedback loop. `bash` is review-only, every call.
 5. **M5 — Chat polish & parity**: panel UX (folds, `@file`, resume/persistence),

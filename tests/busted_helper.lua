@@ -212,6 +212,15 @@ vim = {
   },
 
   fn = {
+    executable = function()
+      return 0
+    end,
+    getcwd = function()
+      return "/tmp"
+    end,
+    win_findbuf = function()
+      return {}
+    end,
     fnamemodify = function()
       return ""
     end,
@@ -256,6 +265,10 @@ vim = {
   defer_fn = function(_fn, _ms) end,
   notify = function() end,
   cmd = function() end,
+
+  trim = function(s)
+    return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+  end,
 
   split = function(str, sep, opts)
     local result = {}

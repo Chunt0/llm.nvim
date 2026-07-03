@@ -21,9 +21,17 @@ function M.check()
   end
 
   if vim.fn.executable("rg") == 1 then
-    health.ok("ripgrep (rg) found")
+    health.ok("ripgrep (rg) found — agent grep/list_files tools at full speed")
   else
-    health.warn("ripgrep (rg) not found — optional today, required for the planned agent grep tool")
+    health.warn(
+      "ripgrep (rg) not found — the agent's grep falls back to plain grep and list_files to a directory walk"
+    )
+  end
+
+  if vim.system ~= nil then
+    health.ok("vim.system available (agent tools can run external commands)")
+  else
+    health.warn("vim.system missing — Neovim ≥ 0.10 is required for the agent's grep/list_files tools")
   end
 
   -- Provider configuration

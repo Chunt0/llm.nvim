@@ -9,6 +9,9 @@ diff-preview replace mode, project-level memory, and an interactive context pick
 Features
 --------
 - Local-first: works out of the box against Ollama at `http://localhost:11434`
+- **Agent mode** (`:LLMAgent`) — the model explores your project itself with
+  `read_file` / `list_files` / `grep` tools in a multi-turn loop, confined to the
+  project root
 - Token-by-token streaming into the current buffer
 - Three providers: Ollama (Chat API), Anthropic (Messages API), OpenAI (Responses API)
 - Multi-turn code chat with per-buffer conversation history
@@ -213,6 +216,51 @@ dropped automatically.
 require("llm").setup({ memory = { max_messages = 40 } })
 ```
 
+Agent Mode
+----------
+
+`:LLMAgent {task}` runs a tool-using agent against your project: the model can
+list files, grep, and read files on its own, in a loop, until it can answer.
+
+```
+:LLMAgent where is the Esc keymap cleaned up after a stream ends?
+:LLMAgent provider=anthropic summarize how streaming works in this plugin
+:LLMAgent                                    (prompts for the task)
+```
+
+A markdown panel opens on the right; the response streams in and every tool
+call is shown as a card:
+
+```
+▸ grep(pattern="remove_esc_keymap") → 6 lines
+▸ read_file(path="lua/llm/init.lua", start_line=620) → 90 lines
+```
+
+Press `Esc` in the panel (or `:LLMCancel`) to stop. The loop is capped at
+`agent.max_turns` (default 25) rounds.
+
+**Defaults**: the provider comes from `agent.provider` (default `ollama`) with
+the model from `constants.models`. Ollama models must support tool calling
+(qwen3, llama3.1+, etc.) — a model without tool support fails immediately with
+a clear error instead of degrading silently.
+
+**Sandboxing**: the agent is read-only — it cannot edit files or run arbitrary
+commands. Every path the model supplies is resolved and confined to the project
+root (no `..` traversal, no absolute paths outside the root, no symlink
+escapes), and secret files (`.env*`) plus binary/database/etc. extensions are
+refused. Tool failures are fed back to the model as errors, never raised.
+
+```lua
+require("llm").setup({
+  agent = { provider = "ollama", max_turns = 25 },
+  tools = {
+    enabled = { "read_file", "list_files", "grep" },
+    policy = { grep = "disabled" },      -- turn individual tools off
+    max_result_bytes = 60 * 1024,        -- cap on a single tool result
+  },
+})
+```
+
 Context Picker
 --------------
 
@@ -258,6 +306,7 @@ Commands Reference
 
 | Command            | Description |
 |--------------------|-------------|
+| `:LLMAgent`        | Run the tool-using agent, e.g. `:LLMAgent provider=ollama find the bug in X` |
 | `:LLMInvoke`       | Generic invoker, e.g. `:LLMInvoke provider=ollama mode=chat` |
 | `:LLMCancel`       | Stop the running stream |
 | `:LLMReset`        | Clear conversation state (incl. OpenAI response-ID chain) |
@@ -361,11 +410,20 @@ Architecture
 ```
 lua/llm/
   init.lua           Streaming engine, provider builders/handlers, diff mode, setup(), user commands
+  agent.lua          Agent loop: request building, tool round-trips, curl transport, panel
+  tools/
+    init.lua         Tool registry: schemas per provider, policy, safe dispatch
+    read_file.lua    Line-numbered reads (buffer-aware), range + byte caps
+    list_files.lua   rg --files listing with glob filtering
+    grep.lua         rg --vimgrep search (plain grep fallback)
+  util/
+    fs.lua           Path confinement (root escape/symlink/secret-file guards), globs
+    proc.lua         vim.system wrapper for tool subprocesses
   provider.lua       Factory: invoke / code / code_chat / code_diff wrappers
   ollama.lua         Ollama provider instance
   anthropic.lua      Anthropic provider instance
   openai.lua         OpenAI provider instance
-  stream.lua         SSE and JSONL stream parsers
+  stream.lua         SSE/JSONL parsers + normalized stream events (text/tool_call/stop)
   memory.lua         Per-buffer conversation history (role-alternation safe)
   project_memory.lua Loads llm_memory.md and injects it into the system prompt
   context_picker.lua vim.ui.select picker for per-request buffer selection

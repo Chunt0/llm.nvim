@@ -1117,6 +1117,17 @@ pcall(vim.api.nvim_create_user_command, "LLMInvoke", function(cmd)
   fn()
 end, { desc = "Invoke LLM provider (openai|anthropic|ollama)", nargs = "*" })
 
+-- Agent mode: multi-turn tool-use loop with project read access.
+-- :LLMAgent [provider=ollama|anthropic] {task}  (prompts for the task if omitted)
+pcall(vim.api.nvim_create_user_command, "LLMAgent", function(cmd)
+  local ok, agent = pcall(require, "llm.agent")
+  if not ok then
+    vim.notify("LLM: agent module failed to load: " .. tostring(agent), vim.log.levels.ERROR)
+    return
+  end
+  agent.start(cmd.args)
+end, { desc = "Run the LLM agent (read_file/list_files/grep tools)", nargs = "*" })
+
 pcall(vim.api.nvim_create_user_command, "LLMDalle", function()
   local ok, mod = pcall(require, "llm.openai")
   if not ok then

@@ -18,6 +18,17 @@ local M = {
   -- Set via require("llm").setup({ default_keymaps = true }) to register the
   -- built-in <leader> keymaps (see lua/llm/keymaps.lua for the full list).
   default_keymaps = false,
+  agent = {
+    provider = "ollama", -- default provider for :LLMAgent
+    max_turns = 25, -- hard cap on request/tool-execution rounds per task
+  },
+  tools = {
+    enabled = { "read_file", "list_files", "grep" },
+    -- Per-tool policy override: "allow" | "review" | "disabled".
+    -- The built-in read-only tools default to "allow".
+    policy = {},
+    max_result_bytes = 60 * 1024, -- cap on a single tool result sent to the model
+  },
   logging = {
     enabled = (os.getenv("LLM_LOG") == "1"),
     redact = true,
