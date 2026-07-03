@@ -10,6 +10,7 @@ local Constants = require("llm.constants")
 local Stream = require("llm.stream")
 local Tools = require("llm.tools")
 local Fs = require("llm.util.fs")
+local Apply = require("llm.edit.apply")
 
 local M = {}
 
@@ -136,6 +137,9 @@ function M.default_system(root, tool_names)
     "Available tools: " .. table.concat(tool_names, ", ") .. ".",
     "Investigate with tools before answering: list or grep to locate things, read_file to confirm.",
     "Cite findings as path:line. Never invent file contents — if a tool errors, adapt or say so.",
+    "Edits you propose (edit_file/write_file) are shown to the user as a diff for approval, and bash "
+      .. "commands require confirmation; a rejection comes back as an error, possibly with the user's reason — "
+      .. "respect it, do not retry the same change.",
     "When you have enough information, give a direct, concise answer.",
   }
   local ok_pm, pm = pcall(require, "llm.project_memory")
@@ -155,6 +159,57 @@ local function cb(ui, name)
   return (ui and ui[name]) or noop
 end
 
+local function default_confirmer(text, done)
+  local ok, choice = pcall(vim.fn.confirm, "LLM agent wants to:\n" .. text, "&Run\n&Cancel", 2)
+  done(ok and choice == 1)
+end
+
+--- Build the tool executor: policy routing + review gating around dispatch.
+--- executor(call, done) — done({ result }|{ error }) fires exactly once, and
+--- may fire asynchronously (the loop pauses while the user reviews an edit).
+local function make_executor(opts)
+  local dispatch = opts.dispatch
+    or function(name, input)
+      return Tools.dispatch(name, input, { root = opts.root })
+    end
+  local reviewer = opts.reviewer
+    or function(spec, done)
+      Apply.review(spec, { root = opts.root }, done, { panel_bufnr = opts.panel_bufnr })
+    end
+  local confirmer = opts.confirmer or default_confirmer
+
+  return function(call, done)
+    local tool = Tools.get(call.name)
+    local policy = Tools.policy(call.name)
+    local function run_exec()
+      local res = dispatch(call.name, call.input)
+      if res.pending_edit then
+        -- Mutations never happen inside exec: an explicit "allow" policy
+        -- applies directly, anything else goes through diff review.
+        if policy == "allow" then
+          done(Apply.apply(res.pending_edit, { root = opts.root }))
+        else
+          reviewer(res.pending_edit, done)
+        end
+      else
+        done(res)
+      end
+    end
+    if tool and policy == "review" and tool.review_kind == "confirm" then
+      local text = (tool.describe and tool.describe(call.input)) or ("run tool " .. call.name)
+      confirmer(text, function(approved)
+        if approved then
+          run_exec()
+        else
+          done({ error = "user declined to run " .. call.name })
+        end
+      end)
+    else
+      run_exec()
+    end
+  end
+end
+
 --- Run the agent loop.
 --- opts:
 ---   provider   "anthropic" | "ollama"
@@ -163,7 +218,11 @@ end
 ---   tools      provider-shaped schema list (default: registry for provider)
 ---   max_turns  default Config.agent.max_turns (25)
 ---   transport  function(body, sink) -> handle?      (default: curl_transport)
----   dispatch   function(name, input) -> {result|error} (default: Tools.dispatch)
+---   dispatch   function(name, input) -> {result|error|pending_edit} (default: Tools.dispatch)
+---   reviewer   function(pending_edit, done) — diff review for mutations (default: Apply.review)
+---   confirmer  function(text, done(bool)) — gate for review_kind="confirm" tools (bash)
+---   executor   function(call, done) — full override of policy routing (tests)
+---   panel_bufnr  buffer the default reviewer must not reuse as its host window
 ---   ui         { on_text, on_thinking, on_tool_start(call), on_tool_done(call, res),
 ---                on_turn(n), on_done(reason, session), on_error(err) }
 --- Returns { cancel = fn, session = { messages } }.
@@ -171,10 +230,7 @@ function M.run(opts)
   local ui = opts.ui or {}
   local max_turns = opts.max_turns or (Config.agent and Config.agent.max_turns) or 25
   local transport = opts.transport
-  local dispatch = opts.dispatch
-    or function(name, input)
-      return Tools.dispatch(name, input, { root = opts.root })
-    end
+  local executor = opts.executor or make_executor(opts)
   local tools = opts.tools
   if tools == nil then
     Tools.setup_builtin()
@@ -233,20 +289,35 @@ function M.run(opts)
           return
         end
         table.insert(session.messages, { role = "assistant", content = text, tool_calls = calls })
+        -- Calls run one at a time; the executor's done may fire later (edit
+        -- review, bash confirmation), pausing the loop until the user acts.
         local results = {}
-        for _, call in ipairs(calls) do
+        local function run_calls(i)
+          if state.cancelled then
+            return
+          end
+          if i > #calls then
+            table.insert(session.messages, { role = "tool_results", results = results })
+            step()
+            return
+          end
+          local call = calls[i]
           cb(ui, "on_tool_start")(call)
-          local res = dispatch(call.name, call.input)
-          cb(ui, "on_tool_done")(call, res)
-          table.insert(results, {
-            id = call.id,
-            name = call.name,
-            content = res.error or res.result or "",
-            is_error = res.error ~= nil or nil,
-          })
+          executor(call, function(res)
+            if state.cancelled then
+              return
+            end
+            cb(ui, "on_tool_done")(call, res)
+            table.insert(results, {
+              id = call.id,
+              name = call.name,
+              content = res.error or res.result or "",
+              is_error = res.error ~= nil or nil,
+            })
+            run_calls(i + 1)
+          end)
         end
-        table.insert(session.messages, { role = "tool_results", results = results })
-        step()
+        run_calls(1)
       end,
       on_error = function(err)
         if settled or state.cancelled then
@@ -449,6 +520,7 @@ function M.start(args)
     model = model,
     prompt = prompt,
     root = root,
+    panel_bufnr = bufnr,
     system = M.default_system(root, tool_names),
     max_tokens = Constants.vars.max_tokens,
     transport = M.curl_transport({
@@ -465,10 +537,17 @@ function M.start(args)
       end,
       on_tool_done = function(_, res)
         if res.error then
-          append_text(bufnr, " → ERROR: " .. res.error .. "\n")
+          local first = res.error:match("^([^\n]*)")
+          append_text(bufnr, " → ERROR: " .. first .. "\n")
         else
-          local n = select(2, tostring(res.result or ""):gsub("\n", "")) + 1
-          append_text(bufnr, " → " .. n .. (n == 1 and " line" or " lines") .. "\n")
+          local out = tostring(res.result or "")
+          local first = out:match("^([^\n]*)")
+          local n = select(2, out:gsub("\n", "")) + 1
+          if n == 1 and #first <= 60 then
+            append_text(bufnr, " → " .. first .. "\n")
+          else
+            append_text(bufnr, " → " .. n .. " lines\n")
+          end
         end
       end,
       on_turn = function(n)

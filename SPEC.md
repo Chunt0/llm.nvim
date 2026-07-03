@@ -1,6 +1,6 @@
 # llm.nvim v2 — In-Editor LLM Agent: Specification
 
-Status: **approved — M1 (bug fixes + foundation) and M3 (read-only agent) landed 2026-07-03; M2 partially landed (normalized Sink events, fake-transport injection)** · Drafted: 2026-07-02
+Status: **approved — M1, M3 (read-only agent), and M4 (editing agent) landed 2026-07-03; M2 partially landed (normalized Sink events, fake-transport injection)** · Drafted: 2026-07-02
 
 ## Decisions (owner-approved)
 
@@ -438,8 +438,17 @@ Ordered so the plugin is never broken in between; each milestone is shippable.
    Ollama and Anthropic with tool cards in a minimal markdown panel, `:LLMAgent`
    command, Esc/`:LLMCancel` cancellation, max_turns cap, and fail-fast for Ollama
    models without tool support. 93 new unit tests (252 total).
-4. **M4 — Editing agent**: `edit_file`/`write_file`/`bash` + pending-edit review
-   queue, staleness guards, rejection feedback loop. `bash` is review-only, every call.
+4. ✅ **M4 — Editing agent** *(landed 2026-07-03)*: `edit_file`/`write_file` compute
+   pending edits (str_replace semantics, 0/&gt;1-match errors, confinement + secret
+   refusal for writes) reviewed as a native diff in `lua/llm/edit/apply.lua` —
+   buffer-apply for loaded files, disk for unloaded, staleness guard with re-anchor,
+   reject-with-reason fed back as `is_error`; `bash` runs from the project root with
+   a timeout, confirm-gated on **every** call and never `allow`-able (registry
+   clamp); the agent loop executes calls sequentially through an async executor so
+   it pauses during review and resumes on accept/reject. 32 new unit tests (284
+   total) plus a headless-nvim smoke test that drives the real review UI.
+   Deviation from the spec: review is one-edit-at-a-time inline in the loop —
+   the `]e`/`[e` multi-edit queue UI is deferred to M5.
 5. **M5 — Chat polish & parity**: panel UX (folds, `@file`, resume/persistence),
    OpenAI tool support, README/docs rewrite, delete compat shims next release.
 

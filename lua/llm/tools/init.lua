@@ -20,11 +20,16 @@ function M.get(name)
 end
 
 --- Effective approval policy for a tool: config override, then the tool's
---- default, then "review" (fail safe for anything unspecified).
+--- default, then "review" (fail safe for anything unspecified). Tools marked
+--- never_allow (bash) cannot be config'd to "allow" — only review/disabled.
 function M.policy(name)
   local cfg = (Config.tools and Config.tools.policy) or {}
   local tool = M._tools[name]
-  return cfg[name] or (tool and tool.policy) or "review"
+  local p = cfg[name] or (tool and tool.policy) or "review"
+  if tool and tool.never_allow and p == "allow" then
+    return "review"
+  end
+  return p
 end
 
 --- Tools enabled by config (Config.tools.enabled), in registration order.
@@ -101,6 +106,9 @@ function M.setup_builtin()
   M.register(require("llm.tools.read_file"))
   M.register(require("llm.tools.list_files"))
   M.register(require("llm.tools.grep"))
+  M.register(require("llm.tools.edit_file"))
+  M.register(require("llm.tools.write_file"))
+  M.register(require("llm.tools.bash"))
 end
 
 return M

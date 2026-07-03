@@ -27,17 +27,17 @@ local function ctx(extra)
 end
 
 describe("tools registry", function()
-  it("exposes the three read-only tools as enabled by default", function()
+  it("exposes all six tools as enabled by default", function()
     local names = {}
     for _, t in ipairs(Tools.enabled()) do
       table.insert(names, t.name)
     end
-    assert.are.same({ "read_file", "list_files", "grep" }, names)
+    assert.are.same({ "read_file", "list_files", "grep", "edit_file", "write_file", "bash" }, names)
   end)
 
   it("builds anthropic-shaped schemas", function()
     local schemas = Tools.schemas("anthropic")
-    assert.are.equal(3, #schemas)
+    assert.are.equal(6, #schemas)
     assert.are.equal("read_file", schemas[1].name)
     assert.are.equal("object", schemas[1].input_schema.type)
     assert.is_string(schemas[1].description)
@@ -51,13 +51,28 @@ describe("tools registry", function()
     assert.are.equal("object", schemas[1]["function"].parameters.type)
   end)
 
-  it("read-only tools default to the allow policy", function()
+  it("read-only tools default to allow, mutating tools to review", function()
     assert.are.equal("allow", Tools.policy("read_file"))
     assert.are.equal("allow", Tools.policy("grep"))
+    assert.are.equal("review", Tools.policy("edit_file"))
+    assert.are.equal("review", Tools.policy("write_file"))
+    assert.are.equal("review", Tools.policy("bash"))
   end)
 
   it("unknown tools default to review (fail safe)", function()
+    assert.are.equal("review", Tools.policy("no_such_tool"))
+  end)
+
+  it("bash can never be config'd to allow, only review or disabled", function()
+    Config.tools.policy.bash = "allow"
     assert.are.equal("review", Tools.policy("bash"))
+    Config.tools.policy.bash = "disabled"
+    assert.are.equal("disabled", Tools.policy("bash"))
+    Config.tools.policy.bash = nil
+    -- edit_file is not clamped: an explicit allow opt-in is honored
+    Config.tools.policy.edit_file = "allow"
+    assert.are.equal("allow", Tools.policy("edit_file"))
+    Config.tools.policy.edit_file = nil
   end)
 
   it("dispatch returns an error result for unknown tools", function()
@@ -87,7 +102,7 @@ describe("tools registry", function()
     for _, t in ipairs(Tools.enabled()) do
       table.insert(names, t.name)
     end
-    assert.are.same({ "read_file", "list_files" }, names)
+    assert.are.same({ "read_file", "list_files", "edit_file", "write_file", "bash" }, names)
     Config.tools.policy.grep = nil
   end)
 
@@ -308,5 +323,108 @@ describe("grep", function()
       )
       assert.truthy(res.result:match("%[1 more match"))
     end)
+  end)
+end)
+
+describe("bash tool", function()
+  it("shows the exact command in the confirmation text", function()
+    local tool = Tools.get("bash")
+    assert.truthy(tool.describe({ command = "rm -rf build" }):match("%$ rm %-rf build"))
+    assert.is_true(tool.never_allow)
+    assert.are.equal("confirm", tool.review_kind)
+  end)
+
+  it("runs via bash -c from the project root with a timeout", function()
+    local seen
+    local res = Tools.dispatch(
+      "bash",
+      { command = "echo hi", timeout_s = 5 },
+      ctx({
+        exec_cmd = function(argv, cwd, opts)
+          seen = { argv = argv, cwd = cwd, opts = opts }
+          return { code = 0, stdout = "hi\n", stderr = "" }
+        end,
+      })
+    )
+    assert.are.same({ "bash", "-c", "echo hi" }, seen.argv)
+    assert.are.equal(fixture, seen.cwd)
+    assert.are.equal(5000, seen.opts.timeout_ms)
+    assert.are.equal("exit 0\nhi", res.result:gsub("%s+$", ""))
+  end)
+
+  it("includes stderr and the exit code in the result", function()
+    local res = Tools.dispatch(
+      "bash",
+      { command = "boom" },
+      ctx({
+        exec_cmd = function()
+          return { code = 2, stdout = "", stderr = "boom: not found" }
+        end,
+      })
+    )
+    assert.truthy(res.result:match("^exit 2"))
+    assert.truthy(res.result:match("%[stderr%]"))
+    assert.truthy(res.result:match("not found"))
+  end)
+
+  it("maps a timeout to an error", function()
+    local res = Tools.dispatch(
+      "bash",
+      { command = "sleep 999", timeout_s = 1 },
+      ctx({
+        exec_cmd = function()
+          return { code = 124, stdout = "", stderr = "", timeout = true }
+        end,
+      })
+    )
+    assert.truthy(res.error:match("timed out after 1s"))
+  end)
+
+  it("truncates huge output at the byte cap", function()
+    local res = Tools.dispatch(
+      "bash",
+      { command = "yes" },
+      ctx({
+        max_bytes = 32,
+        exec_cmd = function()
+          return { code = 0, stdout = string.rep("y\n", 100) }
+        end,
+      })
+    )
+    assert.truthy(res.result:match("%[output truncated%]"))
+  end)
+
+  it("rejects an empty command", function()
+    local res = Tools.dispatch("bash", {}, ctx())
+    assert.truthy(res.error:match("command"))
+  end)
+end)
+
+describe("edit tools return pending edits (no direct writes)", function()
+  it("edit_file yields a pending_edit for review", function()
+    local res = Tools.dispatch(
+      "edit_file",
+      { path = "src/main.lua", old_string = "local a = 1", new_string = "local a = 10" },
+      ctx()
+    )
+    assert.is_nil(res.error)
+    assert.are.equal("edit", res.pending_edit.kind)
+    -- and the file on disk is untouched until review accepts
+    local f = assert(io.open(fixture .. "/src/main.lua", "r"))
+    local content = f:read("*a")
+    f:close()
+    assert.truthy(content:match("local a = 1\n"))
+  end)
+
+  it("write_file yields a pending_edit flagged as create/overwrite", function()
+    local res = Tools.dispatch("write_file", { path = "new_module.lua", content = "return {}" }, ctx())
+    assert.are.equal("create", res.pending_edit.kind)
+    local res2 = Tools.dispatch("write_file", { path = "src/main.lua", content = "x" }, ctx())
+    assert.are.equal("overwrite", res2.pending_edit.kind)
+  end)
+
+  it("edit_file surfaces compute errors as tool errors", function()
+    local res = Tools.dispatch("edit_file", { path = "src/main.lua", old_string = "zzz", new_string = "y" }, ctx())
+    assert.truthy(res.error:match("not found"))
   end)
 end)

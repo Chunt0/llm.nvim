@@ -23,9 +23,11 @@ local M = {
     max_turns = 25, -- hard cap on request/tool-execution rounds per task
   },
   tools = {
-    enabled = { "read_file", "list_files", "grep" },
+    enabled = { "read_file", "list_files", "grep", "edit_file", "write_file", "bash" },
     -- Per-tool policy override: "allow" | "review" | "disabled".
-    -- The built-in read-only tools default to "allow".
+    -- Read-only tools default to "allow"; edit_file/write_file default to
+    -- "review" (diff accept/reject); bash is review-only — every call must be
+    -- confirmed and it can never be set to "allow" (only "disabled").
     policy = {},
     max_result_bytes = 60 * 1024, -- cap on a single tool result sent to the model
   },

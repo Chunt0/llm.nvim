@@ -344,3 +344,169 @@ describe("Agent.default_system", function()
     assert.truthy(s:match("path:line"))
   end)
 end)
+
+describe("Agent.run review gating", function()
+  local Tools = require("llm.tools")
+  Tools.setup_builtin()
+
+  local fixture = "/tmp/llm_nvim_agent_edit_fixture"
+  os.execute("rm -rf " .. fixture .. " && mkdir -p " .. fixture)
+
+  -- each test starts from pristine content (an accepted edit mutates it)
+  before_each(function()
+    local f = assert(io.open(fixture .. "/hello.lua", "w"))
+    f:write("return 'hello'\n")
+    f:close()
+  end)
+
+  local function edit_call_turns()
+    return {
+      function(_, sink)
+        sink.on_tool_call({
+          id = "e1",
+          name = "edit_file",
+          input = { path = "hello.lua", old_string = "'hello'", new_string = "'world'" },
+        })
+        sink.on_stop("tool_use")
+      end,
+      function(_, sink)
+        sink.on_text("Done.")
+        sink.on_stop("end_turn")
+      end,
+    }
+  end
+
+  it("routes pending edits through the reviewer; accept applies", function()
+    local transport, sent = scripted_transport(edit_call_turns())
+    local reviewed
+    local Apply = require("llm.edit.apply")
+    Agent.run({
+      provider = "anthropic",
+      model = "m",
+      prompt = "rename",
+      root = fixture,
+      tools = {},
+      transport = transport,
+      reviewer = function(spec, done)
+        reviewed = spec
+        done(Apply.apply(spec, { root = fixture }))
+      end,
+      ui = {},
+    })
+    assert.are.equal("edit", reviewed.kind)
+    assert.are.equal("hello.lua", reviewed.path)
+    local rf = assert(io.open(fixture .. "/hello.lua", "r"))
+    local content = rf:read("*a")
+    rf:close()
+    assert.are.equal("return 'world'\n", content)
+    -- the accepted result went back to the model
+    local r = sent[2].messages[3].content[1]
+    assert.is_nil(r.is_error)
+    assert.truthy(r.content:match("wrote hello%.lua"))
+  end)
+
+  it("a rejected edit goes back as is_error with the reason", function()
+    local transport, sent = scripted_transport(edit_call_turns())
+    Agent.run({
+      provider = "anthropic",
+      model = "m",
+      prompt = "rename",
+      root = fixture,
+      tools = {},
+      transport = transport,
+      reviewer = function(_, done)
+        done({ error = "user rejected the edit: keep hello" })
+      end,
+      ui = {},
+    })
+    local r = sent[2].messages[3].content[1]
+    assert.is_true(r.is_error)
+    assert.truthy(r.content:match("keep hello"))
+  end)
+
+  it("bash asks the confirmer with the exact command and declines cleanly", function()
+    local transport, sent = scripted_transport({
+      function(_, sink)
+        sink.on_tool_call({ id = "b1", name = "bash", input = { command = "rm -rf /" } })
+        sink.on_stop("tool_use")
+      end,
+      function(_, sink)
+        sink.on_text("Understood.")
+        sink.on_stop("end_turn")
+      end,
+    })
+    local asked
+    Agent.run({
+      provider = "anthropic",
+      model = "m",
+      prompt = "clean up",
+      root = fixture,
+      tools = {},
+      transport = transport,
+      confirmer = function(text, done)
+        asked = text
+        done(false)
+      end,
+      dispatch = function()
+        error("exec must not run when the user declines")
+      end,
+      ui = {},
+    })
+    assert.truthy(asked:match("%$ rm %-rf /"))
+    local r = sent[2].messages[3].content[1]
+    assert.is_true(r.is_error)
+    assert.truthy(r.content:match("declined"))
+  end)
+
+  it("bash runs after confirmation", function()
+    local transport, sent = scripted_transport({
+      function(_, sink)
+        sink.on_tool_call({ id = "b1", name = "bash", input = { command = "echo ok" } })
+        sink.on_stop("tool_use")
+      end,
+      function(_, sink)
+        sink.on_stop("end_turn")
+      end,
+    })
+    Agent.run({
+      provider = "anthropic",
+      model = "m",
+      prompt = "run it",
+      root = fixture,
+      tools = {},
+      transport = transport,
+      confirmer = function(_, done)
+        done(true)
+      end,
+      dispatch = function(name, _)
+        assert.are.equal("bash", name)
+        return { result = "exit 0\nok" }
+      end,
+      ui = {},
+    })
+    local r = sent[2].messages[3].content[1]
+    assert.is_nil(r.is_error)
+    assert.truthy(r.content:match("exit 0"))
+  end)
+
+  it("the loop pauses until the reviewer's done fires (async)", function()
+    local transport, sent = scripted_transport(edit_call_turns())
+    local pending_done
+    Agent.run({
+      provider = "anthropic",
+      model = "m",
+      prompt = "rename",
+      root = fixture,
+      tools = {},
+      transport = transport,
+      reviewer = function(_, done)
+        pending_done = done -- park it: user is looking at the diff
+      end,
+      ui = {},
+    })
+    -- only the first request has been sent while the review is open
+    assert.are.equal(1, #sent)
+    pending_done({ error = "user rejected the edit" })
+    assert.are.equal(2, #sent)
+  end)
+end)

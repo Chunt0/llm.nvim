@@ -5,11 +5,9 @@
 - **M2 leftovers**: session model for chat modes (removes the last global
   stream state, P13), mini.test headless-nvim integration harness, mock SSE
   server for e2e agent tests
-- **M4 — editing agent**: `edit_file` / `write_file` / `bash` tools with the
-  pending-edit review queue (diff-based accept/reject), staleness guards,
-  rejection feedback; `bash` review-required on every call
 - **M5 — chat polish**: persistent chat panel with folds/`@file`, session
-  resume, OpenAI tool support, drop the old-namespace shims
+  resume, follow-up turns in the agent panel, multi-edit review queue
+  (`]e`/`[e`), OpenAI tool support, drop the old-namespace shims
 
 ## Machine setup (run manually — needs sudo password)
 

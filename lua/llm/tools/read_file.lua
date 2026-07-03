@@ -1,40 +1,7 @@
 local Fs = require("llm.util.fs")
 
---- Read a file inside the project root, preferring the loaded buffer over
---- disk so the model sees unsaved edits. Output is line-numbered.
-local function buffer_lines(abs)
-  local ok, lines = pcall(function()
-    for _, b in ipairs(vim.api.nvim_list_bufs()) do
-      if vim.api.nvim_buf_is_loaded(b) and vim.api.nvim_buf_get_name(b) == abs then
-        return vim.api.nvim_buf_get_lines(b, 0, -1, false)
-      end
-    end
-    return nil
-  end)
-  if ok then
-    return lines
-  end
-  return nil
-end
-
-local function disk_lines(abs)
-  local f = io.open(abs, "r")
-  if not f then
-    return nil
-  end
-  local content = f:read("*a") or ""
-  f:close()
-  local lines = {}
-  for line in (content .. "\n"):gmatch("([^\n]*)\n") do
-    table.insert(lines, line)
-  end
-  -- a trailing newline in the file produces one phantom empty line; drop it
-  if #lines > 0 and lines[#lines] == "" and content:sub(-1) == "\n" then
-    table.remove(lines)
-  end
-  return lines
-end
-
+-- Read a file inside the project root, preferring the loaded buffer over
+-- disk so the model sees unsaved edits. Output is line-numbered.
 return {
   name = "read_file",
   description = "Read a file in the project. Returns its content with line numbers. "
@@ -59,7 +26,7 @@ return {
       return { error = why }
     end
 
-    local lines = buffer_lines(abs) or disk_lines(abs)
+    local lines = Fs.read_lines(abs)
     if not lines then
       return { error = "file not found: " .. Fs.relative(abs, ctx.root) }
     end

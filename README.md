@@ -11,7 +11,9 @@ Features
 - Local-first: works out of the box against Ollama at `http://localhost:11434`
 - **Agent mode** (`:LLMAgent`) — the model explores your project itself with
   `read_file` / `list_files` / `grep` tools in a multi-turn loop, confined to the
-  project root
+  project root — and can **propose edits** (`edit_file` / `write_file`) that you
+  review as a native diff before anything is applied, plus run shell commands
+  (`bash`) with per-command confirmation
 - Token-by-token streaming into the current buffer
 - Three providers: Ollama (Chat API), Anthropic (Messages API), OpenAI (Responses API)
 - Multi-turn code chat with per-buffer conversation history
@@ -245,18 +247,31 @@ the model from `constants.models`. Ollama models must support tool calling
 (qwen3, llama3.1+, etc.) — a model without tool support fails immediately with
 a clear error instead of degrading silently.
 
-**Sandboxing**: the agent is read-only — it cannot edit files or run arbitrary
-commands. Every path the model supplies is resolved and confined to the project
-root (no `..` traversal, no absolute paths outside the root, no symlink
+**Editing under review**: when the agent calls `edit_file` (exact string
+replacement) or `write_file` (create/overwrite), nothing touches your file.
+The proposed result opens as a native diff — `<leader>da` accepts, `<leader>dr`
+rejects (optionally with a reason the model sees and must respect). Accepting
+applies to the *buffer* for loaded files (you decide when to `:w`) and to disk
+only for unloaded ones. If the file changed while you were looking, the edit
+re-anchors or fails as stale rather than clobbering your work. The agent loop
+pauses during review and resumes when you decide.
+
+**Shell commands**: the `bash` tool shows you the exact command and runs it
+from the project root only after you confirm — every single call. Its policy
+can never be set to `allow`; only `review` or `disabled`.
+
+**Sandboxing**: every path the model supplies is resolved and confined to the
+project root (no `..` traversal, no absolute paths outside the root, no symlink
 escapes), and secret files (`.env*`) plus binary/database/etc. extensions are
-refused. Tool failures are fed back to the model as errors, never raised.
+refused — for reads and writes alike. Tool failures are fed back to the model
+as errors, never raised.
 
 ```lua
 require("llm").setup({
   agent = { provider = "ollama", max_turns = 25 },
   tools = {
-    enabled = { "read_file", "list_files", "grep" },
-    policy = { grep = "disabled" },      -- turn individual tools off
+    enabled = { "read_file", "list_files", "grep", "edit_file", "write_file", "bash" },
+    policy = { bash = "disabled" },      -- e.g. no shell at all
     max_result_bytes = 60 * 1024,        -- cap on a single tool result
   },
 })
@@ -411,12 +426,17 @@ Architecture
 ```
 lua/llm/
   init.lua           Streaming engine, provider builders/handlers, diff mode, setup(), user commands
-  agent.lua          Agent loop: request building, tool round-trips, curl transport, panel
+  agent.lua          Agent loop: request building, tool round-trips, review gating, curl transport, panel
+  edit/
+    apply.lua        Pending edits: str_replace compute, staleness guard, diff review, apply
   tools/
-    init.lua         Tool registry: schemas per provider, policy, safe dispatch
+    init.lua         Tool registry: schemas per provider, policy (bash never allow-able), safe dispatch
     read_file.lua    Line-numbered reads (buffer-aware), range + byte caps
     list_files.lua   rg --files listing with glob filtering
     grep.lua         rg --vimgrep search (plain grep fallback)
+    edit_file.lua    Exact-string replacement → pending edit for review
+    write_file.lua   Create/overwrite a whole file → pending edit for review
+    bash.lua         Shell command, confirm-gated on every call
   util/
     fs.lua           Path confinement (root escape/symlink/secret-file guards), globs
     proc.lua         vim.system wrapper for tool subprocesses

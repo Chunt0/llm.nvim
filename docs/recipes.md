@@ -27,7 +27,16 @@ Recipes
 
 - Answer Questions About an Unfamiliar Codebase
   - Open the repo, run `:LLMAgent how does X reach Y?` — the agent is confined
-    to the project root and read-only, so it is safe to point at anything
+    to the project root, so it is safe to point at anything
+
+- Let the Agent Fix Something (with review)
+  - `:LLMAgent rename get_visual_info to get_selection_info everywhere`
+  - Each proposed change opens as a native diff: `<leader>da` accepts (applies
+    to the buffer — you still `:w`), `<leader>dr` rejects with an optional
+    reason the model sees
+  - Shell commands (`bash` tool) always show the exact command and wait for
+    your confirmation; disable entirely with
+    `tools = { policy = { bash = "disabled" } }`
 
 - Point at a Remote Ollama Server
   - `require("llm").setup({ constants = { api_endpoints = { ollama = "https://my-server.example.com/api/chat" } } })`

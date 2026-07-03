@@ -177,6 +177,63 @@ function M.glob_match(rel, glob)
   return false
 end
 
+--- Lines of the loaded buffer whose name is abs, or nil if not loaded.
+function M.buffer_lines(abs)
+  local ok, lines = pcall(function()
+    for _, b in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_loaded(b) and vim.api.nvim_buf_get_name(b) == abs then
+        return vim.api.nvim_buf_get_lines(b, 0, -1, false)
+      end
+    end
+    return nil
+  end)
+  if ok then
+    return lines
+  end
+  return nil
+end
+
+--- The loaded buffer number whose name is abs, or nil.
+function M.buffer_for(abs)
+  local ok, bufnr = pcall(function()
+    for _, b in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_loaded(b) and vim.api.nvim_buf_get_name(b) == abs then
+        return b
+      end
+    end
+    return nil
+  end)
+  if ok then
+    return bufnr
+  end
+  return nil
+end
+
+--- Lines of the file on disk, or nil when unreadable/missing.
+function M.disk_lines(abs)
+  local f = io.open(abs, "r")
+  if not f then
+    return nil
+  end
+  local content = f:read("*a") or ""
+  f:close()
+  local lines = {}
+  for line in (content .. "\n"):gmatch("([^\n]*)\n") do
+    table.insert(lines, line)
+  end
+  -- a trailing newline in the file produces one phantom empty line; drop it
+  if #lines > 0 and lines[#lines] == "" and content:sub(-1) == "\n" then
+    table.remove(lines)
+  end
+  return lines
+end
+
+--- Current content of abs, preferring the loaded buffer over disk so unsaved
+--- edits are visible. Returns lines or nil.
+function M.read_lines(abs)
+  return M.buffer_lines(abs) or M.disk_lines(abs)
+end
+
 --- Relative form of an absolute path under root (for display).
 function M.relative(path, root)
   root = strip_trailing_slash(root or "")
