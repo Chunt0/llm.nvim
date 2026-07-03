@@ -23,15 +23,17 @@ jobs:
       - name: Install luacheck
         run: luarocks install luacheck
 
+      # Scope to project dirs: gh-actions-lua installs its toolchain into
+      # .lua/ and .luarocks/ inside the workspace, which "." would lint too.
       - name: Luacheck
-        run: luacheck .
+        run: luacheck lua tests
 
       - name: Stylua Check
         uses: JohnnyMorganz/stylua-action@v3
         with:
           version: latest
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --check .
+          args: --check lua tests
 
   test:
     runs-on: ubuntu-latest
@@ -39,7 +41,8 @@ jobs:
       fail-fast: false
       matrix:
         # Neovim embeds LuaJIT (5.1-compatible); 5.4 keeps us honest on modern Lua.
-        luaVersion: [ "5.4", "luajit-2.1.0-beta3" ]
+        # luajit-2.1.0-beta3 tarballs 404 now; "luajit-2.1" builds the branch head.
+        luaVersion: [ "5.4", "luajit-2.1" ]
     steps:
       - uses: actions/checkout@v4
 

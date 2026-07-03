@@ -1,4 +1,6 @@
 local M = {}
+-- Neovim's LuaJIT has the 5.1 global; CI's Lua 5.4 only has table.unpack.
+local unpack = unpack or table.unpack
 local Job = require("plenary.job")
 local Log = require("llm.log")
 local Utils = require("llm.utils")

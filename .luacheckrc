@@ -7,5 +7,10 @@ globals = {
 ignore = {
   "631", -- max line length
 }
+exclude_files = {
+  ".lua",      -- toolchain installed by gh-actions-lua in CI
+  ".luarocks", -- toolchain installed by gh-actions-luarocks in CI
+  ".install",
+}
 
 codes = true

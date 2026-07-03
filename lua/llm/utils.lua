@@ -1,4 +1,6 @@
 local Constants = require("llm.constants")
+-- Neovim's LuaJIT has the 5.1 global; CI's Lua 5.4 only has table.unpack.
+local unpack = unpack or table.unpack
 local M = {}
 
 function M.get_api_key(name)
