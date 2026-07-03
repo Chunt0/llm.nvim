@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  lint-and-test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,10 +20,8 @@ jobs:
       - name: Set up LuaRocks
         uses: leafo/gh-actions-luarocks@v4
 
-      - name: Install luacheck and busted
-        run: |
-          luarocks install luacheck
-          luarocks install busted
+      - name: Install luacheck
+        run: luarocks install luacheck
 
       - name: Luacheck
         run: luacheck .
@@ -34,6 +32,27 @@ jobs:
           version: latest
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Neovim embeds LuaJIT (5.1-compatible); 5.4 keeps us honest on modern Lua.
+        luaVersion: [ "5.4", "luajit-2.1.0-beta3" ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Lua ${{ matrix.luaVersion }}
+        uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: ${{ matrix.luaVersion }}
+
+      - name: Set up LuaRocks
+        uses: leafo/gh-actions-luarocks@v4
+
+      - name: Install busted
+        run: luarocks install busted
 
       - name: Run tests
         run: busted -v

@@ -1,12 +1,12 @@
 local M = {}
 local Job = require("plenary.job")
-local Log = require("log")
-local Utils = require("utils")
-local Stream = require("stream")
-local Config = require("llm_config")
-local Memory = require("memory")
-local UI = require("ui")
-local Constants = require("constants")
+local Log = require("llm.log")
+local Utils = require("llm.utils")
+local Stream = require("llm.stream")
+local Config = require("llm.config")
+local Memory = require("llm.memory")
+local UI = require("llm.ui")
+local Constants = require("llm.constants")
 
 -- ===== Debug toggle =====
 local DEBUG = false -- set true to spam :messages
@@ -137,8 +137,15 @@ end
 -- ===== State =====
 local assistant_message = nil
 local provider_state = {
-  OPENAI = { count = 0, response_id = "" },
+  OPENAI = { response_id = "" },
 }
+
+-- Stream handlers run on the job's luv thread where vim.notify is not allowed.
+local function notify_async(msg, level)
+  vim.schedule(function()
+    vim.notify(msg, level or vim.log.levels.WARN)
+  end)
+end
 
 local function curl_common_args()
   local args = { "-sS", "-N", "--no-buffer", "--fail-with-body", "-K", "-" }
@@ -158,7 +165,9 @@ local function curl_common_args()
 end
 
 local function extract_error_message(err)
-  local code = err:match("HTTP/%d+%.?%d*%s+(%d%d%d)")
+  -- Matches both verbose-style status lines ("HTTP/1.1 401") and the message
+  -- curl actually prints with --fail-with-body ("… returned error: 401").
+  local code = err:match("HTTP/%d+%.?%d*%s+(%d%d%d)") or err:match("returned error:%s*(%d%d%d)")
   local msg = nil
   local json_blob = err:match("({.*})")
   if json_blob then
@@ -220,14 +229,14 @@ function M.make_anthropic_spec_curl_args(opts, prompt, system_prompt)
   local api_key = opts.api_key_name and Utils.get_api_key(opts.api_key_name) or os.getenv("ANTHROPIC_API_KEY")
   local messages = build_messages(opts, prompt, system_prompt)
   local system, rest = split_system(messages)
+  -- No temperature/top_p: current Claude models (Opus 4.7+, Sonnet 5) reject
+  -- sampling parameters with a 400. Steer behavior via the prompts instead.
   local data = {
     model = model,
     stream = true,
     system = system or system_prompt,
     messages = rest,
-    max_tokens = opts.max_tokens or 4096,
-    temperature = opts.temp,
-    top_p = opts.top_p,
+    max_tokens = opts.max_tokens or 16000,
   }
   local json = vim.json.encode(data)
   local args = curl_common_args()
@@ -249,24 +258,35 @@ end
 
 function M.handle_anthropic_spec_data(chunk, state)
   state = state or { buf = "" }
-  local current_event = nil
   Stream.parse_sse_chunk(state, chunk, {
-    on_event = function(ev)
-      current_event = ev
-    end,
-    on_data = function(payload)
+    -- The event name arrives as the second argument, carried in the parser
+    -- state, so event:/data: pairs split across curl chunks stay paired.
+    on_data = function(payload, event_name)
       local ok, obj = pcall(vim.json.decode, payload)
       if not ok or not obj then
         return
       end
-      if (current_event and current_event:match("content_block")) or obj.delta then
+      if obj.type == "error" or event_name == "error" then
+        local msg = (obj.error and obj.error.message) or "unknown stream error"
+        notify_async("LLM (anthropic): " .. msg, vim.log.levels.ERROR)
+        return
+      end
+      if (event_name and event_name:match("content_block")) or obj.delta then
         local text = (obj.delta and obj.delta.text) or (obj.delta and obj.delta[1] and obj.delta[1].text)
         if text and #text > 0 then
           write_safely(text)
         end
       end
-      if obj.type == "message_stop" or current_event == "message_stop" then
-        assistant_message = { role = "assistant", content = "" }
+      if obj.type == "message_delta" and obj.delta and obj.delta.stop_reason then
+        local reason = obj.delta.stop_reason
+        if reason == "max_tokens" then
+          notify_async("LLM: response truncated (max_tokens reached) — raise max_tokens in setup()")
+        elseif reason == "refusal" then
+          notify_async("LLM: the model declined this request (stop_reason=refusal)")
+        end
+      end
+      if obj.type == "message_stop" or event_name == "message_stop" then
+        assistant_message = { role = "assistant", content = response_accum }
       end
     end,
   })
@@ -275,7 +295,7 @@ end
 -- ===== Provider: Ollama (Chat API — JSONL) =====
 -- Uses /api/chat with messages[] for proper multi-turn support.
 function M.make_ollama_spec_curl_args(opts, prompt, system_prompt)
-  local url = (opts.url and #opts.url > 0) and opts.url or "https://ollama.putty-ai.com/api/chat"
+  local url = (opts.url and #opts.url > 0) and opts.url or "http://localhost:11434/api/chat"
   local messages
   if opts.messages then
     messages = opts.messages
@@ -307,10 +327,14 @@ function M.handle_ollama_spec_data(chunk, state)
   state = state or { buf = "" }
   Stream.parse_jsonl_chunk(state, chunk, {
     on_json = function(obj)
+      if obj.error then
+        notify_async("LLM (ollama): " .. tostring(obj.error), vim.log.levels.ERROR)
+        return
+      end
       if obj.message and obj.message.content then
         write_safely(tostring(obj.message.content))
       end
-      if obj.done then
+      if obj.done and obj.done ~= vim.NIL then
         assistant_message = { role = "assistant", content = response_accum }
       end
     end,
@@ -325,32 +349,23 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
   local reasoning_effort = opts.reasoning_effort or "low"
 
   local oai = provider_state.OPENAI
-  dbg("count: " .. oai.count)
 
-  local data
   local instructions = system_prompt
   if opts.messages then
     instructions = nil
   end
-  if oai.count == 0 then
-    data = {
-      model = model,
-      stream = true,
-      input = opts.messages or prompt,
-      instructions = instructions,
-      reasoning = { effort = reasoning_effort },
-      store = true,
-    }
-  else
-    data = {
-      model = model,
-      stream = true,
-      input = opts.messages or prompt,
-      instructions = instructions,
-      previous_response_id = oai.response_id,
-      reasoning = { effort = reasoning_effort },
-      store = true,
-    }
+  local data = {
+    model = model,
+    stream = true,
+    input = opts.messages or prompt,
+    instructions = instructions,
+    reasoning = { effort = reasoning_effort },
+    store = true,
+  }
+  -- Chain onto the previous response only when we actually captured its id —
+  -- a failed request must not leave an empty/stale id in the chain.
+  if oai.response_id and oai.response_id ~= "" then
+    data.previous_response_id = oai.response_id
   end
   local json = vim.json.encode(data)
   dbg(("openai req: url=%s model=%s bytes=%d"):format(url, tostring(model), #json))
@@ -420,8 +435,11 @@ function M.handle_openai_spec_data(line)
     return
   end
 
-  if t == "response.error" and json.error then
-    dbg("OpenAI error: " .. (json.error.message or vim.inspect(json.error)))
+  if t == "response.error" or t == "response.failed" or t == "error" then
+    local emsg = (json.error and json.error.message)
+      or (json.response and json.response.error and json.response.error.message)
+      or "unknown error"
+    notify_async("LLM (openai): " .. emsg, vim.log.levels.ERROR)
     return
   end
 end
@@ -509,11 +527,7 @@ local active_job = nil
 function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spec_data_fn)
   vim.api.nvim_clear_autocmds({ group = group })
 
-  local replace = opts.replace
   local ui_mode = (Config.ui and Config.ui.mode) or "inline"
-  if replace then
-    ui_mode = "inline"
-  end
   opts.ui_mode = ui_mode
 
   local prompt = Utils.get_prompt(opts)
@@ -528,7 +542,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
 
   -- Build system prompt, then prepend project memory if available
   local system_prompt = opts.system_prompt or ""
-  local ok_pm, pm = pcall(require, "project_memory")
+  local ok_pm, pm = pcall(require, "llm.project_memory")
   if ok_pm then
     local mem = pm.load()
     if mem and mem ~= "" then
@@ -550,11 +564,15 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
   local use_memory = (Config.memory and Config.memory.enabled) and opts.code_chat
   local mem_bufnr = vim.api.nvim_get_current_buf()
   if use_memory then
+    -- The user turn is stored only after a successful reply (see on_exit):
+    -- appending it up-front leaves consecutive user messages behind when a
+    -- request fails, which Anthropic rejects on every following request.
     opts.messages = Memory.build_messages(mem_bufnr, system_prompt, prompt)
-    Memory.append(mem_bufnr, "user", prompt)
   end
 
   response_accum = ""
+  utf8_carry = ""
+  pending_text = ""
   local req = make_curl_args_fn(opts, prompt, system_prompt)
   local args, kconfig
   if type(req) == "table" and req.args then
@@ -586,7 +604,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
   local parser_state = { buf = "" }
   local error_notified = false
   local stderr_buf = {}
-  local stdout_buf = {}   -- collects raw lines for error reporting
+  local stdout_buf = {} -- collects raw lines for error reporting
   local function on_stdout(_, out)
     local chunk = normalize_chunk(out)
     if chunk == "" then
@@ -604,12 +622,15 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     end
   end
 
+  local esc_bufnr = vim.api.nvim_get_current_buf()
+  local function remove_esc_keymap()
+    pcall(vim.keymap.del, "n", "<Esc>", { buffer = esc_bufnr })
+  end
+
   local on_exit_common = vim.schedule_wrap(function(_, code)
-    if framework == "OPENAI" then
-      provider_state.OPENAI.count = provider_state.OPENAI.count + 1
-    else
+    if framework ~= "OPENAI" then
       -- switching away from OpenAI breaks the response chain; reset its state
-      provider_state.OPENAI = { count = 0, response_id = "" }
+      provider_state.OPENAI = { response_id = "" }
     end
 
     if utf8_carry ~= "" then
@@ -623,19 +644,26 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     flush_pending()
 
     vim.schedule(function()
-      if not replace then
-        local bufnr = target_bufnr
-        local last_line = vim.api.nvim_buf_line_count(bufnr) - 1
-        local insert_at = last_line + 1
-        local user_line = "---------------------------User---------------------------"
-        vim.api.nvim_buf_set_lines(bufnr, insert_at, insert_at, false, { "", user_line, "" })
-        pcall(vim.api.nvim_win_set_cursor, target_win, { insert_at + 3, 0 })
-      end
+      local bufnr = target_bufnr
+      local last_line = vim.api.nvim_buf_line_count(bufnr) - 1
+      local insert_at = last_line + 1
+      local user_line = "---------------------------User---------------------------"
+      vim.api.nvim_buf_set_lines(bufnr, insert_at, insert_at, false, { "", user_line, "" })
+      pcall(vim.api.nvim_win_set_cursor, target_win, { insert_at + 3, 0 })
 
       if not assistant_message and response_accum ~= "" then
         assistant_message = { role = "assistant", content = response_accum }
       end
-      if use_memory and assistant_message and assistant_message.content and assistant_message.content ~= "" then
+      local succeeded = (code == 0 or code == nil)
+      if
+        succeeded
+        and use_memory
+        and assistant_message
+        and assistant_message.content
+        and assistant_message.content ~= ""
+      then
+        -- Store the turn as a user/assistant pair so roles always alternate.
+        Memory.append(mem_bufnr, "user", prompt)
         Memory.append(mem_bufnr, "assistant", assistant_message.content)
       end
 
@@ -652,9 +680,12 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
       active_job = nil
       assistant_message = nil
       end_anchor()
-      if code ~= 0 then
-        local body = #stdout_buf > 0 and ("\nResponse: " .. table.concat(stdout_buf, " ")) or ""
-        vim.notify("LLM: request failed (curl " .. tostring(code) .. ")" .. body, vim.log.levels.WARN)
+      remove_esc_keymap()
+      if not succeeded then
+        local body = table.concat(stdout_buf, " ")
+        local _, api_msg = extract_error_message(body)
+        local detail = api_msg and (": " .. api_msg) or (#body > 0 and ("\nResponse: " .. body) or "")
+        vim.notify("LLM: request failed (curl " .. tostring(code) .. ")" .. detail, vim.log.levels.ERROR)
       end
       dbg("job closed")
     end)
@@ -694,18 +725,18 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
         vim.notify("LLM streaming cancelled", vim.log.levels.INFO)
         active_job = nil
         end_anchor()
+        remove_esc_keymap()
         dbg("cancelled by user")
       end
     end,
   })
 
-  local bufnr = vim.api.nvim_get_current_buf()
   pcall(
     vim.keymap.set,
     "n",
     "<Esc>",
     ":doautocmd User LLM_Escape<CR>",
-    { buffer = bufnr, noremap = true, silent = true }
+    { buffer = esc_bufnr, noremap = true, silent = true }
   )
   return active_job
 end
@@ -716,61 +747,80 @@ end
 --- Returns a new table — orig is never mutated.
 function M._build_patched(orig, new_lines, start_row, end_row)
   local out = {}
-  for i = 1, start_row         do out[#out + 1] = orig[i] end
-  for _, l in ipairs(new_lines) do out[#out + 1] = l       end
-  for i = end_row + 1, #orig   do out[#out + 1] = orig[i] end
+  for i = 1, start_row do
+    out[#out + 1] = orig[i]
+  end
+  for _, l in ipairs(new_lines) do
+    out[#out + 1] = l
+  end
+  for i = end_row + 1, #orig do
+    out[#out + 1] = orig[i]
+  end
   return out
 end
 
--- ===== Diff mode =====
--- Streams the LLM response into a scratch vsplit, then enables Neovim's native
--- diff highlighting between the original buffer and the proposed replacement.
--- <leader>la accepts (writes new lines into the original buffer).
--- <leader>lr rejects (closes the scratch window, original is untouched).
+-- ===== Diff / replace mode =====
+-- Streams the LLM response into a scratch vsplit. The original buffer is never
+-- touched while the request is in flight, so a failure or cancel leaves the
+-- user's code exactly as it was.
+--   opts.auto_apply = false (code_diff): enables Neovim's native diff between
+--     the original and the proposed replacement; the keys from
+--     Config.keymaps.diff_accept / diff_reject (default <leader>da / <leader>dr)
+--     accept or reject it.
+--   opts.auto_apply = true (code / code_all_buf): applies the replacement to
+--     the selection as soon as the stream completes successfully and closes
+--     the scratch window.
 function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_data_fn)
   vim.api.nvim_clear_autocmds({ group = group })
 
   local sel = Utils.get_visual_info()
   if not sel then
-    vim.notify("LLM: highlight the code to diff.", vim.log.levels.ERROR)
+    vim.notify("LLM: highlight the code you want rewritten.", vim.log.levels.ERROR)
     return
   end
 
   -- Exit visual mode before splitting.
-  vim.api.nvim_feedkeys(
-    vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false
-  )
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
 
   local original_bufnr = vim.api.nvim_get_current_buf()
-  local original_win   = vim.api.nvim_get_current_win()
-  local framework      = opts.framework
-  local model          = opts.model
+  local original_win = vim.api.nvim_get_current_win()
+  local framework = opts.framework
+  local model = opts.model
 
-  vim.notify("[llm] Calling " .. tostring(model) .. " (diff mode)", vim.log.levels.INFO)
+  local mode_label = opts.auto_apply and "replace mode" or "diff mode"
+  vim.notify("[llm] Calling " .. tostring(model) .. " (" .. mode_label .. ")", vim.log.levels.INFO)
 
   local system_prompt = opts.system_prompt or ""
-  local ok_pm, pm = pcall(require, "project_memory")
+  local ok_pm, pm = pcall(require, "llm.project_memory")
   if ok_pm then
     local mem = pm.load()
     if mem and mem ~= "" then
-      system_prompt = "# Project Memory (persistent codebase context):\n" .. mem
+      system_prompt = "# Project Memory (persistent codebase context):\n"
+        .. mem
         .. (system_prompt ~= "" and ("\n\n" .. system_prompt) or "")
     end
   end
 
   local sel_text = table.concat(sel.lines, "\n")
-  local ok_cp, ContextPicker = pcall(require, "context_picker")
-  local ctx_text = ok_cp and ContextPicker.get_text() or nil
+  local ctx_text
+  if opts.all_buffers then
+    -- get_all_buffers_text already folds in the context-picker selection.
+    local all = Utils.get_all_buffers_text(opts)
+    ctx_text = (all ~= "" and all) or nil
+  else
+    local ok_cp, ContextPicker = pcall(require, "llm.context_picker")
+    ctx_text = ok_cp and ContextPicker.get_text() or nil
+  end
   local code_instruction = Constants.prompts.code_instruction .. sel_text
-  local prompt = ctx_text
-    and ("# Code Context:\n" .. ctx_text .. "\n\n" .. code_instruction)
-    or code_instruction
+  local prompt = ctx_text and ("# Code Context:\n" .. ctx_text .. "\n\n" .. code_instruction) or code_instruction
 
-  local target      = UI.open_diff(original_win)
+  local target = UI.open_diff(original_win)
   local scratch_bufnr = target.bufnr
-  local scratch_win   = target.win
+  local scratch_win = target.win
 
   response_accum = ""
+  utf8_carry = ""
+  pending_text = ""
   start_anchor(scratch_bufnr, scratch_win)
 
   local req = make_curl_args_fn(opts, prompt, system_prompt)
@@ -792,38 +842,58 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
   end
 
   local function normalize_chunk(out)
-    if type(out) == "table" then out = table.concat(out, "\n") end
+    if type(out) == "table" then
+      out = table.concat(out, "\n")
+    end
     return (out or ""):gsub("\r\n", "\n")
   end
 
-  local parser_state   = { buf = "" }
+  local parser_state = { buf = "" }
   local error_notified = false
-  local stderr_buf     = {}
-  local stdout_buf     = {}
+  local stderr_buf = {}
+  local stdout_buf = {}
 
   local function on_stdout(_, out)
     local chunk = normalize_chunk(out)
-    if chunk == "" then return end
-    if #stdout_buf < 6 then table.insert(stdout_buf, chunk) end
+    if chunk == "" then
+      return
+    end
+    if #stdout_buf < 6 then
+      table.insert(stdout_buf, chunk)
+    end
     chunk = chunk .. "\n"
     local ok = pcall(handle_spec_data_fn, chunk, parser_state)
-    if not ok then pcall(handle_spec_data_fn, chunk) end
+    if not ok then
+      pcall(handle_spec_data_fn, chunk)
+    end
+  end
+
+  local function remove_esc_keymap()
+    pcall(vim.keymap.del, "n", "<Esc>", { buffer = scratch_bufnr })
   end
 
   local on_exit = vim.schedule_wrap(function(_, code)
-    if framework == "OPENAI" then
-      provider_state.OPENAI.count = provider_state.OPENAI.count + 1
-    else
-      provider_state.OPENAI = { count = 0, response_id = "" }
+    if framework ~= "OPENAI" then
+      provider_state.OPENAI = { response_id = "" }
     end
 
-    if utf8_carry ~= "" then write_safely(utf8_carry); utf8_carry = "" end
+    if utf8_carry ~= "" then
+      write_safely(utf8_carry)
+      utf8_carry = ""
+    end
     flush_pending()
 
     vim.schedule(function()
       if code ~= 0 then
-        local body = #stdout_buf > 0 and ("\nResponse: " .. table.concat(stdout_buf, " ")) or ""
-        vim.notify("LLM: request failed (curl " .. tostring(code) .. ")" .. body, vim.log.levels.WARN)
+        -- code == nil means the job was cancelled — clean up without the
+        -- failure notification (the cancel path already notified).
+        if code ~= nil then
+          local body = table.concat(stdout_buf, " ")
+          local _, api_msg = extract_error_message(body)
+          local detail = api_msg and (": " .. api_msg) or (#body > 0 and ("\nResponse: " .. body) or "")
+          vim.notify("LLM: request failed (curl " .. tostring(code) .. ")" .. detail, vim.log.levels.ERROR)
+        end
+        remove_esc_keymap()
         pcall(vim.api.nvim_win_close, scratch_win, true)
         active_job = nil
         end_anchor()
@@ -835,19 +905,47 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
       while #new_lines > 0 and new_lines[#new_lines] == "" do
         table.remove(new_lines)
       end
-      if #new_lines == 0 then new_lines = { "" } end
+      if #new_lines == 0 then
+        new_lines = { "" }
+      end
+
+      if opts.auto_apply then
+        -- Replace mode: the stream finished cleanly, so write the new lines
+        -- into the original buffer and close the scratch window.
+        remove_esc_keymap()
+        vim.api.nvim_buf_set_lines(original_bufnr, sel.start_row, sel.end_row, false, new_lines)
+        pcall(vim.api.nvim_win_close, scratch_win, true)
+        if vim.api.nvim_win_is_valid(original_win) then
+          vim.api.nvim_set_current_win(original_win)
+          pcall(vim.api.nvim_win_set_cursor, original_win, { sel.start_row + 1, 0 })
+        end
+        vim.notify("LLM: replacement applied (u to undo)", vim.log.levels.INFO)
+        pcall(Log.log, {
+          time = os.date("%Y-%m-%dT%H:%M:%S"),
+          framework = framework,
+          model = model,
+          user = { role = "user", content = prompt },
+          assistant = { role = "assistant", content = response_accum },
+        })
+        active_job = nil
+        assistant_message = nil
+        end_anchor()
+        return
+      end
 
       -- Replace scratch buffer with the full patched file so the diff shows
       -- only the changed region in context, not the whole file as different.
       local orig_all = vim.api.nvim_buf_get_lines(original_bufnr, 0, -1, false)
-      local patched  = M._build_patched(orig_all, new_lines, sel.start_row, sel.end_row)
+      local patched = M._build_patched(orig_all, new_lines, sel.start_row, sel.end_row)
       vim.api.nvim_buf_set_lines(scratch_bufnr, 0, -1, false, patched)
 
       -- Scroll both windows to the changed region before enabling diff.
       pcall(vim.api.nvim_win_set_cursor, original_win, { sel.start_row + 1, 0 })
-      pcall(vim.api.nvim_win_set_cursor, scratch_win,  { sel.start_row + 1, 0 })
-      vim.api.nvim_set_current_win(original_win); vim.cmd("diffthis")
-      vim.api.nvim_set_current_win(scratch_win);  vim.cmd("diffthis")
+      pcall(vim.api.nvim_win_set_cursor, scratch_win, { sel.start_row + 1, 0 })
+      vim.api.nvim_set_current_win(original_win)
+      vim.cmd("diffthis")
+      vim.api.nvim_set_current_win(scratch_win)
+      vim.cmd("diffthis")
 
       local km = Config.keymaps or {}
       local key_accept = km.diff_accept or "<leader>da"
@@ -858,6 +956,7 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
       local function cleanup(apply)
         pcall(vim.keymap.del, "n", key_accept, { buffer = original_bufnr })
         pcall(vim.keymap.del, "n", key_reject, { buffer = original_bufnr })
+        remove_esc_keymap()
         vim.cmd("diffoff!")
         if apply then
           vim.api.nvim_buf_set_lines(original_bufnr, sel.start_row, sel.end_row, false, new_lines)
@@ -870,22 +969,30 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
       end
 
       for _, bufnr in ipairs({ original_bufnr, scratch_bufnr }) do
-        pcall(vim.keymap.set, "n", key_accept, function() cleanup(true)  end, {
-          buffer = bufnr, nowait = true, silent = true,
+        pcall(vim.keymap.set, "n", key_accept, function()
+          cleanup(true)
+        end, {
+          buffer = bufnr,
+          nowait = true,
+          silent = true,
           desc = "LLM diff: accept changes",
         })
-        pcall(vim.keymap.set, "n", key_reject, function() cleanup(false) end, {
-          buffer = bufnr, nowait = true, silent = true,
+        pcall(vim.keymap.set, "n", key_reject, function()
+          cleanup(false)
+        end, {
+          buffer = bufnr,
+          nowait = true,
+          silent = true,
           desc = "LLM diff: reject changes",
         })
       end
 
       -- Tidy up if the user closes the scratch window manually with :q.
       vim.api.nvim_create_autocmd("BufWipeout", {
-        buffer   = scratch_bufnr,
-        once     = true,
+        buffer = scratch_bufnr,
+        once = true,
         callback = function()
-          pcall(vim.cmd,        "diffoff!")
+          pcall(vim.cmd, "diffoff!")
           local km2 = Config.keymaps or {}
           pcall(vim.keymap.del, "n", km2.diff_accept or "<leader>da", { buffer = original_bufnr })
           pcall(vim.keymap.del, "n", km2.diff_reject or "<leader>dr", { buffer = original_bufnr })
@@ -893,61 +1000,84 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
       })
 
       pcall(Log.log, {
-        time      = os.date("%Y-%m-%dT%H:%M:%S"),
+        time = os.date("%Y-%m-%dT%H:%M:%S"),
         framework = framework,
-        model     = model,
-        user      = { role = "user",      content = prompt          },
-        assistant = { role = "assistant", content = response_accum  },
+        model = model,
+        user = { role = "user", content = prompt },
+        assistant = { role = "assistant", content = response_accum },
       })
-      active_job        = nil
+      active_job = nil
       assistant_message = nil
       end_anchor()
     end)
   end)
 
   active_job = Job:new({
-    command         = "curl",
-    args            = args,
-    on_stdout       = on_stdout,
-    on_stderr       = function(_, err)
+    command = "curl",
+    args = args,
+    on_stdout = on_stdout,
+    on_stderr = function(_, err)
       if err and err ~= "" then
         dbg("STDERR: " .. err:gsub("\r", "\\r"))
         table.insert(stderr_buf, err)
         if not error_notified then
           local c = extract_error_message(err)
-          if c then error_notified = true; notify_http_error(err) end
+          if c then
+            error_notified = true
+            notify_http_error(err)
+          end
         end
       end
     end,
-    on_exit         = on_exit,
+    on_exit = on_exit,
     enable_handlers = true,
-    writer          = kconfig,
+    writer = kconfig,
   })
 
   active_job:start()
 
   vim.api.nvim_create_autocmd("User", {
-    group   = group,
+    group = group,
     pattern = "LLM_Escape",
     callback = function()
       if active_job then
         active_job:shutdown()
-        vim.notify("LLM diff cancelled", vim.log.levels.INFO)
+        vim.notify("LLM " .. mode_label .. " cancelled", vim.log.levels.INFO)
         active_job = nil
+        remove_esc_keymap()
         pcall(vim.api.nvim_win_close, scratch_win, true)
         end_anchor()
       end
     end,
   })
 
-  pcall(vim.keymap.set, "n", "<Esc>", ":doautocmd User LLM_Escape<CR>",
-    { buffer = scratch_bufnr, noremap = true, silent = true })
+  pcall(
+    vim.keymap.set,
+    "n",
+    "<Esc>",
+    ":doautocmd User LLM_Escape<CR>",
+    { buffer = scratch_bufnr, noremap = true, silent = true }
+  )
 
   return active_job
 end
 
+--- Single setup entry point.
+---   require("llm").setup({
+---     default_keymaps = true,             -- register the built-in <leader> maps
+---     constants = { models = {...}, api_endpoints = {...}, prompts = {...} },
+---     ui = {...}, memory = {...}, network = {...}, keymaps = {...}, logging = {...},
+---   })
+function M.setup(opts)
+  opts = opts or {}
+  Config.setup(opts)
+  if opts.default_keymaps then
+    require("llm.keymaps").apply()
+  end
+end
+
 function M.reset_message_buffers()
-  provider_state.OPENAI = { count = 0, response_id = "" }
+  provider_state.OPENAI = { response_id = "" }
   assistant_message = nil
   Memory.clear()
   vim.notify("LLM session cleared", vim.log.levels.INFO)
@@ -970,12 +1100,12 @@ end, { desc = "Clear conversation memory for current buffer" })
 -- Generic invoker: :LLMInvoke provider=<openai|anthropic|ollama> mode=<invoke|code|chat>
 pcall(vim.api.nvim_create_user_command, "LLMInvoke", function(cmd)
   local args = cmd.args or ""
-  local provider = args:match("provider=([%w_%-]+)") or args:match("^([%w_%-]+)") or "openai"
+  local provider = args:match("provider=([%w_%-]+)") or args:match("^([%w_%-]+)") or "ollama"
   local mode = args:match("mode=([%w_%-]+)") or "invoke"
   if mode == "chat" then
     mode = "code_chat"
   end
-  local ok, mod = pcall(require, provider)
+  local ok, mod = pcall(require, "llm." .. provider)
   if not ok then
     vim.notify("LLM: unknown provider '" .. provider .. "' (valid: openai, anthropic, ollama)", vim.log.levels.ERROR)
     return
@@ -988,7 +1118,7 @@ pcall(vim.api.nvim_create_user_command, "LLMInvoke", function(cmd)
 end, { desc = "Invoke LLM provider (openai|anthropic|ollama)", nargs = "*" })
 
 pcall(vim.api.nvim_create_user_command, "LLMDalle", function()
-  local ok, mod = pcall(require, "openai")
+  local ok, mod = pcall(require, "llm.openai")
   if not ok then
     vim.notify("LLM: openai provider not available", vim.log.levels.ERROR)
     return
@@ -998,14 +1128,14 @@ end, { desc = "Generate image with DALL·E" })
 
 -- Project memory commands
 pcall(vim.api.nvim_create_user_command, "LLMMemoryEdit", function()
-  local ok, pm = pcall(require, "project_memory")
+  local ok, pm = pcall(require, "llm.project_memory")
   if ok then
     pm.edit()
   end
 end, { desc = "Open llm_memory.md in a split for editing" })
 
 pcall(vim.api.nvim_create_user_command, "LLMMemoryPath", function()
-  local ok, pm = pcall(require, "project_memory")
+  local ok, pm = pcall(require, "llm.project_memory")
   if ok then
     vim.notify("LLM memory file: " .. pm.path(), vim.log.levels.INFO)
   end
@@ -1013,21 +1143,21 @@ end, { desc = "Show path to the project memory file" })
 
 -- Context picker commands
 pcall(vim.api.nvim_create_user_command, "LLMContextAdd", function()
-  local ok, cp = pcall(require, "context_picker")
+  local ok, cp = pcall(require, "llm.context_picker")
   if ok then
     cp.add()
   end
 end, { desc = "Toggle a buffer in/out of LLM context" })
 
 pcall(vim.api.nvim_create_user_command, "LLMContextClear", function()
-  local ok, cp = pcall(require, "context_picker")
+  local ok, cp = pcall(require, "llm.context_picker")
   if ok then
     cp.clear()
   end
 end, { desc = "Clear all LLM context buffers" })
 
 pcall(vim.api.nvim_create_user_command, "LLMContextList", function()
-  local ok, cp = pcall(require, "context_picker")
+  local ok, cp = pcall(require, "llm.context_picker")
   if ok then
     cp.list()
   end

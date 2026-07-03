@@ -3,9 +3,10 @@ local M = {}
 -- Very small helpers to parse streaming outputs
 
 -- SSE parser: feeds complete logical lines to a callback table
--- state: { buf = "" }
+-- state: { buf = "", event = nil } — the current event name lives in the state
+-- so an event:/data: pair split across two chunks stays paired.
 -- chunk: string (may contain multiple lines)
--- cb: { on_event(name), on_data(json_or_text), on_comment(text), on_line(line) }
+-- cb: { on_event(name), on_data(json_or_text, event_name), on_comment(text), on_line(line) }
 function M.parse_sse_chunk(state, chunk, cb)
   if not chunk or chunk == "" then
     return
@@ -21,19 +22,23 @@ function M.parse_sse_chunk(state, chunk, cb)
     if cb and cb.on_line then
       cb.on_line(line)
     end
-    if line:match("^:%s?") then
+    if line == "" then
+      -- Blank line terminates an SSE event; the event name does not carry over.
+      state.event = nil
+    elseif line:match("^:%s?") then
       if cb and cb.on_comment then
         cb.on_comment(line:sub(2))
       end
     elseif line:match("^event:%s*") then
       local ev = line:match("^event:%s*(.-)%s*$") or ""
+      state.event = ev
       if cb and cb.on_event then
         cb.on_event(ev)
       end
     elseif line:match("^data:%s*") then
       local data = line:gsub("^data:%s*", "")
       if cb and cb.on_data then
-        cb.on_data(data)
+        cb.on_data(data, state.event)
       end
     end
   end

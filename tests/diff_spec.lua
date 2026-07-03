@@ -2,10 +2,10 @@
 -- provider.create code_diff, invoke_llm_and_stream_into_diff smoke tests,
 -- and constants prompt-engineering assertions.
 
-local llm      = require("llm")
-local utils    = require("utils")
-local Config   = require("llm_config")
-local Constants = require("constants")
+local llm = require("llm")
+local utils = require("llm.utils")
+local Config = require("llm.config")
+local Constants = require("llm.constants")
 
 -- ── _build_patched ────────────────────────────────────────────────────────────
 -- Pure function: splice new_lines into orig at [start_row, end_row).
@@ -13,7 +13,7 @@ local Constants = require("constants")
 
 describe("llm._build_patched", function()
   it("replaces a middle range with new lines", function()
-    local orig    = { "a", "b", "c", "d", "e" }
+    local orig = { "a", "b", "c", "d", "e" }
     local patched = llm._build_patched(orig, { "X", "Y" }, 1, 3)
     assert.are.same({ "a", "X", "Y", "d", "e" }, patched)
   end)
@@ -34,7 +34,7 @@ describe("llm._build_patched", function()
   end)
 
   it("preserves context lines above and below the selection", function()
-    local orig    = { "before1", "before2", "sel1", "sel2", "after1", "after2" }
+    local orig = { "before1", "before2", "sel1", "sel2", "after1", "after2" }
     local patched = llm._build_patched(orig, { "new1" }, 2, 4)
     assert.are.same({ "before1", "before2", "new1", "after1", "after2" }, patched)
   end)
@@ -50,8 +50,8 @@ describe("llm._build_patched", function()
   end)
 
   it("does not mutate the original table", function()
-    local orig   = { "a", "b", "c" }
-    local _      = llm._build_patched(orig, { "NEW" }, 1, 2)
+    local orig = { "a", "b", "c" }
+    local _ = llm._build_patched(orig, { "NEW" }, 1, 2)
     assert.are.same({ "a", "b", "c" }, orig)
   end)
 
@@ -72,83 +72,107 @@ describe("utils.get_visual_info", function()
   local saved_mode, saved_getpos, saved_get_lines
 
   before_each(function()
-    saved_mode      = vim.fn.mode
-    saved_getpos    = vim.fn.getpos
+    saved_mode = vim.fn.mode
+    saved_getpos = vim.fn.getpos
     saved_get_lines = vim.api.nvim_buf_get_lines
   end)
 
   after_each(function()
-    vim.fn.mode                = saved_mode
-    vim.fn.getpos              = saved_getpos
+    vim.fn.mode = saved_mode
+    vim.fn.getpos = saved_getpos
     vim.api.nvim_buf_get_lines = saved_get_lines
   end)
 
   it("returns nil in normal mode", function()
-    vim.fn.mode = function() return "n" end
+    vim.fn.mode = function()
+      return "n"
+    end
     assert.is_nil(utils.get_visual_info())
   end)
 
   it("returns nil in insert mode", function()
-    vim.fn.mode = function() return "i" end
+    vim.fn.mode = function()
+      return "i"
+    end
     assert.is_nil(utils.get_visual_info())
   end)
 
   it("returns nil in command mode", function()
-    vim.fn.mode = function() return "c" end
+    vim.fn.mode = function()
+      return "c"
+    end
     assert.is_nil(utils.get_visual_info())
   end)
 
   it("returns a table with the correct fields in line-visual mode", function()
-    vim.fn.mode   = function() return "V" end
+    vim.fn.mode = function()
+      return "V"
+    end
     vim.fn.getpos = function(mark)
       return mark == "v" and { 0, 3, 0, 0 } or { 0, 5, 0, 0 }
     end
     vim.api.nvim_buf_get_lines = function(_, s, e, _)
       local out = {}
-      for i = s + 1, e do out[#out + 1] = "line" .. i end
+      for i = s + 1, e do
+        out[#out + 1] = "line" .. i
+      end
       return out
     end
 
     local info = utils.get_visual_info()
     assert.is_table(info)
-    assert.are.equal(2,  info.start_row)  -- srow - 1 = 3 - 1
-    assert.are.equal(5,  info.end_row)    -- erow = 5
-    assert.are.equal(3, #info.lines)      -- lines 3, 4, 5
+    assert.are.equal(2, info.start_row) -- srow - 1 = 3 - 1
+    assert.are.equal(5, info.end_row) -- erow = 5
+    assert.are.equal(3, #info.lines) -- lines 3, 4, 5
   end)
 
   it("normalises a bottom-up selection (cursor above anchor)", function()
-    vim.fn.mode   = function() return "V" end
+    vim.fn.mode = function()
+      return "V"
+    end
     vim.fn.getpos = function(mark)
       -- visual mark at row 6, cursor at row 2 (selection made upward)
       return mark == "v" and { 0, 6, 0, 0 } or { 0, 2, 0, 0 }
     end
     vim.api.nvim_buf_get_lines = function(_, s, e, _)
       local out = {}
-      for i = s + 1, e do out[#out + 1] = "x" end
+      for _ = s + 1, e do
+        out[#out + 1] = "x"
+      end
       return out
     end
 
     local info = utils.get_visual_info()
     assert.is_table(info)
-    assert.are.equal(1, info.start_row)  -- min(2, 6) - 1
-    assert.are.equal(6, info.end_row)    -- max(2, 6)
+    assert.are.equal(1, info.start_row) -- min(2, 6) - 1
+    assert.are.equal(6, info.end_row) -- max(2, 6)
   end)
 
   it("returns nil when buf_get_lines returns an empty table", function()
-    vim.fn.mode   = function() return "V" end
-    vim.fn.getpos = function(_) return { 0, 1, 0, 0 } end
-    vim.api.nvim_buf_get_lines = function() return {} end
+    vim.fn.mode = function()
+      return "V"
+    end
+    vim.fn.getpos = function(_)
+      return { 0, 1, 0, 0 }
+    end
+    vim.api.nvim_buf_get_lines = function()
+      return {}
+    end
     assert.is_nil(utils.get_visual_info())
   end)
 
   it("works in char-visual mode", function()
-    vim.fn.mode   = function() return "v" end
+    vim.fn.mode = function()
+      return "v"
+    end
     vim.fn.getpos = function(mark)
       return mark == "v" and { 0, 2, 0, 0 } or { 0, 4, 0, 0 }
     end
     vim.api.nvim_buf_get_lines = function(_, s, e, _)
       local out = {}
-      for i = s + 1, e do out[#out + 1] = "line" end
+      for _ = s + 1, e do
+        out[#out + 1] = "line"
+      end
       return out
     end
 
@@ -162,18 +186,22 @@ describe("utils.get_visual_info", function()
     -- nvim_buf_set_lines(buf, start, end, ...) replaces lines [start, end).
     -- For a selection of rows 3-5 (1-indexed), the correct 0-indexed args are
     -- start=2 (inclusive), end=5 (exclusive).
-    vim.fn.mode   = function() return "V" end
+    vim.fn.mode = function()
+      return "V"
+    end
     vim.fn.getpos = function(mark)
       return mark == "v" and { 0, 3, 0, 0 } or { 0, 5, 0, 0 }
     end
     vim.api.nvim_buf_get_lines = function(_, s, e, _)
       local out = {}
-      for i = s + 1, e do out[#out + 1] = "line" end
+      for _ = s + 1, e do
+        out[#out + 1] = "line"
+      end
       return out
     end
 
-    local info    = utils.get_visual_info()
-    local orig    = { "pre1", "pre2", "sel1", "sel2", "sel3", "post1" }
+    local info = utils.get_visual_info()
+    local orig = { "pre1", "pre2", "sel1", "sel2", "sel3", "post1" }
     local patched = llm._build_patched(orig, { "new" }, info.start_row, info.end_row)
     -- selection was rows 3-5 (orig[3..5]); they should be replaced by "new"
     assert.are.same({ "pre1", "pre2", "new", "post1" }, patched)
@@ -237,14 +265,14 @@ describe("provider.create", function()
   local P, M
 
   before_each(function()
-    P = require("provider")
+    P = require("llm.provider")
     M = P.create({
-      url         = "http://test.local/api",
-      model       = "test-model",
-      framework   = "TEST",
-      prompts     = { system_prompt = "sys", code_prompt = "code" },
-      vars        = { temp = 1 },
-      make_curl   = llm.make_ollama_spec_curl_args,
+      url = "http://test.local/api",
+      model = "test-model",
+      framework = "TEST",
+      prompts = { system_prompt = "sys", code_prompt = "code" },
+      vars = { temp = 1 },
+      make_curl = llm.make_ollama_spec_curl_args,
       handle_data = llm.handle_ollama_spec_data,
     })
   end)
@@ -338,20 +366,23 @@ describe("constants prompt engineering", function()
 
   it("code_prompt mentions no markdown", function()
     local lower = Constants.prompts.code_prompt:lower()
-    assert.is_truthy(lower:find("markdown") or lower:find("no markdown") or lower:find("raw"),
-      "code_prompt should reference 'markdown' or 'raw'")
+    assert.is_truthy(
+      lower:find("markdown") or lower:find("no markdown") or lower:find("raw"),
+      "code_prompt should reference 'markdown' or 'raw'"
+    )
   end)
 
   it("code_instruction ends with a task separator so the selection is appended cleanly", function()
     -- The instruction is concatenated with the user's selected text.
     -- It should end with a newline so there is no run-on.
-    assert.are.equal("\n", Constants.prompts.code_instruction:sub(-1),
-      "code_instruction should end with \\n")
+    assert.are.equal("\n", Constants.prompts.code_instruction:sub(-1), "code_instruction should end with \\n")
   end)
 
   it("code_prompt mentions raw output (not wrapped)", function()
     local lower = Constants.prompts.code_prompt:lower()
-    assert.is_truthy(lower:find("raw") or lower:find("verbatim") or lower:find("source file"),
-      "code_prompt should describe raw/verbatim output")
+    assert.is_truthy(
+      lower:find("raw") or lower:find("verbatim") or lower:find("source file"),
+      "code_prompt should describe raw/verbatim output"
+    )
   end)
 end)

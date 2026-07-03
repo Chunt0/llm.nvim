@@ -1,4 +1,4 @@
-local Constants = require("constants")
+local Constants = require("llm.constants")
 local M = {}
 
 function M.get_api_key(name)
@@ -51,17 +51,19 @@ end
 ---   2. All loaded buffers  (when opts.all_buffers == true)
 function M.get_all_buffers_text(opts)
   local all_text = {}
-  local max_bytes = (opts and opts.max_buffer_bytes)
-    or (require("llm_config").context.max_buffer_bytes)
-    or (200 * 1024)
-  local include_fts = require("llm_config").context.include_filetypes
+  local max_bytes = (opts and opts.max_buffer_bytes) or require("llm.config").context.max_buffer_bytes or (200 * 1024)
+  local include_fts = require("llm.config").context.include_filetypes
 
   local function process_buffer(buf)
     local filename = vim.api.nvim_buf_get_name(buf)
-    if not M.should_include_file(filename) then return end
+    if not M.should_include_file(filename) then
+      return
+    end
     -- Skip buffers whose backing file is too large.
     local ok, stat = pcall(vim.loop and vim.loop.fs_stat or function() end, filename)
-    if ok and stat and stat.size and stat.size > max_bytes then return end
+    if ok and stat and stat.size and stat.size > max_bytes then
+      return
+    end
     local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     table.insert(all_text, "File: " .. filename)
     table.insert(all_text, table.concat(lines, "\n"))
@@ -70,7 +72,7 @@ function M.get_all_buffers_text(opts)
 
   -- Always include context-picker selection first
   local seen = {}
-  local ok_cp, ContextPicker = pcall(require, "context_picker")
+  local ok_cp, ContextPicker = pcall(require, "llm.context_picker")
   if ok_cp then
     for _, bufnr in ipairs(ContextPicker.get_selected()) do
       seen[bufnr] = true
@@ -81,22 +83,20 @@ function M.get_all_buffers_text(opts)
   if opts and opts.all_buffers then
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
       if vim.api.nvim_buf_is_loaded(buf) and not seen[buf] then
-        local name = vim.api.nvim_buf_get_name(buf)
+        local allowed = true
         if include_fts then
+          allowed = false
           local ft = vim.bo[buf].filetype
-          local allowed = false
           for _, x in ipairs(include_fts) do
             if x == ft then
               allowed = true
               break
             end
           end
-          if not allowed then
-            goto continue
-          end
         end
-        process_buffer(buf)
-        ::continue::
+        if allowed then
+          process_buffer(buf)
+        end
       end
     end
   end
@@ -161,9 +161,13 @@ function M.get_visual_info()
   end
   local _, srow, _ = unpack(vim.fn.getpos("v"))
   local _, erow, _ = unpack(vim.fn.getpos("."))
-  if srow > erow then srow, erow = erow, srow end
+  if srow > erow then
+    srow, erow = erow, srow
+  end
   local lines = vim.api.nvim_buf_get_lines(0, srow - 1, erow, true)
-  if not lines or #lines == 0 then return nil end
+  if not lines or #lines == 0 then
+    return nil
+  end
   return { lines = lines, start_row = srow - 1, end_row = erow }
 end
 
@@ -181,7 +185,9 @@ function M.trim_context(context, max_length)
 end
 
 local function insert_agent_separator(ui_mode)
-  if ui_mode ~= "inline" then return end
+  if ui_mode ~= "inline" then
+    return
+  end
   local bufnr = vim.api.nvim_get_current_buf()
   local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
   local agent_line = "---------------------------Agent---------------------------"
@@ -190,15 +196,17 @@ local function insert_agent_separator(ui_mode)
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
 end
 
+-- Prompt building for chat/invoke modes. Code replacement no longer goes
+-- through here — it uses invoke_llm_and_stream_into_diff, which never touches
+-- the original buffer until the request has succeeded.
 function M.get_prompt(opts)
-  local replace = opts.replace
   local visual_lines = M.get_visual_selection()
   local raw_input
 
   if visual_lines then
     raw_input = table.concat(visual_lines, "\n")
-  elseif not replace then
-    -- No visual selection: fall back to typed input for chat/invoke modes.
+  else
+    -- No visual selection: fall back to typed input.
     local ok_input, input = pcall(vim.fn.input, "LLM prompt: ")
     if ok_input and input and input ~= "" then
       raw_input = input
@@ -206,36 +214,12 @@ function M.get_prompt(opts)
   end
 
   if not raw_input or raw_input == "" then
-    if replace then
-      vim.notify("LLM: highlight the code you want replaced.", vim.log.levels.ERROR)
-    end
     return nil
   end
 
   local prompt = raw_input
 
-  if replace then
-    -- Code-replacement mode: inject context-picker files if selected.
-    local ok_cp, ContextPicker = pcall(require, "context_picker")
-    local ctx_text = ok_cp and ContextPicker.get_text() or nil
-
-    local code_instruction = Constants.prompts.code_instruction .. prompt
-
-    if ctx_text then
-      prompt = "# Code Context:\n" .. ctx_text .. "\n\n" .. code_instruction
-    else
-      prompt = code_instruction
-    end
-
-    -- Delete the visual selection and prepare insertion point.
-    vim.api.nvim_command("normal! d")
-    local bufnr = vim.api.nvim_get_current_buf()
-    local line, _ = unpack(vim.api.nvim_win_get_cursor(0))
-    vim.api.nvim_buf_set_lines(bufnr, line - 1, line - 1, false, { "" })
-    vim.api.nvim_win_set_cursor(0, { line, 0 })
-    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", false, true, true), "nx", false)
-
-  elseif opts.code_chat then
+  if opts.code_chat then
     -- Chat mode: separator then buffer context.
     insert_agent_separator(opts.ui_mode)
     local buffer_text = M.get_all_buffers_text(opts)
@@ -245,11 +229,10 @@ function M.get_prompt(opts)
       .. buffer_text
       .. "\n\n# User question:\n"
       .. prompt
-
   else
     -- Plain invoke mode: separator then optional context-picker context.
     insert_agent_separator(opts.ui_mode)
-    local ok_cp, ContextPicker = pcall(require, "context_picker")
+    local ok_cp, ContextPicker = pcall(require, "llm.context_picker")
     if ok_cp then
       local ctx_text = ContextPicker.get_text()
       if ctx_text then

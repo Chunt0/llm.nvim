@@ -60,18 +60,12 @@ function M.add()
     for i, b in ipairs(_selected) do
       if b == choice.bufnr then
         table.remove(_selected, i)
-        vim.notify(
-          "LLM: Removed from context: " .. vim.fn.fnamemodify(choice.name, ":~:."),
-          vim.log.levels.INFO
-        )
+        vim.notify("LLM: Removed from context: " .. vim.fn.fnamemodify(choice.name, ":~:."), vim.log.levels.INFO)
         return
       end
     end
     table.insert(_selected, choice.bufnr)
-    vim.notify(
-      "LLM: Added to context: " .. vim.fn.fnamemodify(choice.name, ":~:."),
-      vim.log.levels.INFO
-    )
+    vim.notify("LLM: Added to context: " .. vim.fn.fnamemodify(choice.name, ":~:."), vim.log.levels.INFO)
   end)
 end
 
@@ -102,7 +96,7 @@ function M.get_text()
   if #sels == 0 then
     return nil
   end
-  local Utils = require("utils")
+  local Utils = require("llm.utils")
   local parts = {}
   for _, bufnr in ipairs(sels) do
     local name = vim.api.nvim_buf_get_name(bufnr)

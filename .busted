@@ -2,7 +2,7 @@ return {
   default = {
     verbose = true,
     helper  = "tests/busted_helper",
-    lpath   = "lua/?.lua",
+    lpath   = "lua/?.lua;lua/?/init.lua",
     ROOT    = { "tests/" },
   }
 }

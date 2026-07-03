@@ -6,19 +6,22 @@
 -- that would cause silent API failures.
 
 local llm = require("llm")
-local Memory = require("memory")
-local constants = require("constants")
+local Memory = require("llm.memory")
+local constants = require("llm.constants")
 
 -- ── helper: decode the JSON body embedded in a curl -K config string ─────────
 -- The config contains a line like:   data = "{ ... \"escaped\" ... }"
 -- string.format("%q", ...) produces a valid Lua string literal, so we can
 -- recover the original JSON by evaluating it with load().
 
+-- loadstring on Lua 5.1/LuaJIT, load on 5.2+
+local load_str = loadstring or load
+
 local function extract_body(config)
   for line in (config .. "\n"):gmatch("([^\n]*)\n") do
     local val = line:match("^data = (.+)$")
     if val then
-      local fn, err = load("return " .. val)
+      local fn, err = load_str("return " .. val)
       if not fn then
         error("load() failed on data line: " .. tostring(err))
       end
@@ -283,6 +286,44 @@ describe("make_anthropic_spec_curl_args", function()
     end
     assert.is_true(has_user, "messages must contain a user message")
   end)
+
+  -- P4 regression: current Claude models (Opus 4.7+, Sonnet 5) reject
+  -- temperature/top_p with a 400 — the body must never contain them.
+  it("JSON body contains no sampling parameters", function()
+    local r = llm.make_anthropic_spec_curl_args(
+      { model = constants.models.anthropic, url = "", api_key_name = nil },
+      "hello",
+      "system"
+    )
+    local body = extract_body(r.config)
+    assert.is_table(body)
+    assert.is_nil(body.temperature, "temperature must not be sent to Anthropic")
+    assert.is_nil(body.top_p, "top_p must not be sent to Anthropic")
+    assert.is_nil(body.top_k, "top_k must not be sent to Anthropic")
+  end)
+
+  -- P14 regression: 4096 truncated long code rewrites mid-function.
+  it("JSON body defaults max_tokens to 16000", function()
+    local r = llm.make_anthropic_spec_curl_args(
+      { model = constants.models.anthropic, url = "", api_key_name = nil },
+      "hello",
+      ""
+    )
+    local body = extract_body(r.config)
+    assert.is_table(body)
+    assert.are.equal(16000, body.max_tokens)
+  end)
+
+  it("JSON body honors an explicit max_tokens override", function()
+    local r = llm.make_anthropic_spec_curl_args(
+      { model = constants.models.anthropic, url = "", api_key_name = nil, max_tokens = 32000 },
+      "hello",
+      ""
+    )
+    local body = extract_body(r.config)
+    assert.is_table(body)
+    assert.are.equal(32000, body.max_tokens)
+  end)
 end)
 
 -- ── Ollama Chat API ───────────────────────────────────────────────────────────
@@ -301,9 +342,12 @@ describe("make_ollama_spec_curl_args", function()
     assert.is_string(r.config)
   end)
 
-  it("config targets the Ollama Chat API endpoint", function()
+  -- P1 regression: the shipped default must be the local Ollama instance,
+  -- never a remote third-party server.
+  it("defaults to the local Ollama endpoint (localhost:11434)", function()
     local r = llm.make_ollama_spec_curl_args({ model = constants.models.ollama, url = "" }, "hello", "")
-    assert.is_truthy(r.config:find("ollama", 1, true), "config should mention ollama in the URL")
+    assert.is_truthy(r.config:find("localhost:11434", 1, true), "default endpoint must be localhost:11434")
+    assert.is_falsy(r.config:find("putty%-ai"), "default endpoint must not be a remote server")
   end)
 
   it("config does NOT contain an Authorization header (Ollama is unauthenticated)", function()
@@ -548,6 +592,25 @@ describe("session management", function()
     llm.reset_message_buffers()
     assert.are.same({}, Memory.messages(cur))
   end)
+
+  -- P5 regression: previous_response_id must be sent only after an actual
+  -- response id was captured from the stream — never as an empty string
+  -- (a failed first request used to poison the whole chain with a 400).
+  it("chains previous_response_id only after a response id was captured", function()
+    llm.reset_message_buffers()
+    local r1 = llm.make_openai_spec_curl_args({ model = "gpt-4o", url = "", api_key_name = nil }, "one", "")
+    assert.is_nil(extract_body(r1.config).previous_response_id, "no chaining before any response id exists")
+
+    -- Simulate the stream delivering a response id.
+    llm.handle_openai_spec_data('data: {"type":"response.created","response":{"id":"resp_123"}}')
+
+    local r2 = llm.make_openai_spec_curl_args({ model = "gpt-4o", url = "", api_key_name = nil }, "two", "")
+    assert.are.equal("resp_123", extract_body(r2.config).previous_response_id)
+
+    llm.reset_message_buffers()
+    local r3 = llm.make_openai_spec_curl_args({ model = "gpt-4o", url = "", api_key_name = nil }, "three", "")
+    assert.is_nil(extract_body(r3.config).previous_response_id, "reset must clear the response chain")
+  end)
 end)
 
 -- ── Response handler smoke tests ──────────────────────────────────────────────
@@ -590,6 +653,26 @@ describe("handle_anthropic_spec_data", function()
     local state = { buf = "" }
     assert.has_no.errors(function()
       llm.handle_anthropic_spec_data("event: content_block_delta\ndata: {not valid json}\n", state)
+    end)
+  end)
+
+  it("does not error on an error event (P9: surfaced, not crashed)", function()
+    local state = { buf = "" }
+    assert.has_no.errors(function()
+      llm.handle_anthropic_spec_data(
+        'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n',
+        state
+      )
+    end)
+  end)
+
+  it("does not error on a message_delta carrying a stop_reason", function()
+    local state = { buf = "" }
+    assert.has_no.errors(function()
+      llm.handle_anthropic_spec_data(
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":16000}}\n',
+        state
+      )
     end)
   end)
 end)

@@ -2,11 +2,22 @@ Recipes
 
 - Replace Code (visual selection)
   - Select code in visual mode
-  - Run your provider's `code` function (e.g., `:LLMInvoke provider=openai mode=code`)
+  - Run your provider's `code` function (e.g. `<leader>lc`, or `:LLMInvoke provider=ollama mode=code`)
+  - The replacement streams into a scratch split and is applied when it completes;
+    a failed or cancelled request leaves your buffer untouched
+
+- Review Before Applying
+  - Select code in visual mode
+  - Run `code_diff` (e.g. `<leader>ld`) — accept with `<leader>da`, reject with `<leader>dr`
 
 - Chat With Context
-  - Select question in visual mode
-  - Run `mode=chat` to open a conversational reply inline or in your chosen UI mode
+  - Select your question in visual mode (or select nothing and type at the prompt)
+  - Run `code_chat` (e.g. `<leader>lt`, or `:LLMInvoke provider=ollama mode=chat`)
+  - Follow up below the inserted `User` separator and invoke again
 
-- Translate
-  - Use provider-specific helpers (e.g., `openai.en2ch`) or set `prompts.en2ch_prompt` and run `mode=invoke`
+- Ask About Specific Files
+  - `:LLMContextAdd` to toggle buffers into the context, then use any mode —
+    the selected files are prepended as a `# Code Context:` block
+
+- Point at a Remote Ollama Server
+  - `require("llm").setup({ constants = { api_endpoints = { ollama = "https://my-server.example.com/api/chat" } } })`

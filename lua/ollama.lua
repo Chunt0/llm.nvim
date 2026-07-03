@@ -1,15 +1,7 @@
-local constants = require("constants")
-local provider  = require("provider")
-local llm       = require("llm")
-
-local FRAMEWORK = "OLLAMA"
-
-local M = provider.create({
-    constants    = constants,
-    provider_key = "ollama",
-    framework    = FRAMEWORK,
-    make_curl    = llm.make_ollama_spec_curl_args,
-    handle_data  = llm.handle_ollama_spec_data,
-})
-
-return M
+-- DEPRECATED shim: this module moved to lua/llm/ollama.lua.
+-- Update your config to require("llm.ollama"). This shim will be removed
+-- in a future release.
+pcall(function()
+  vim.notify_once('llm.nvim: require("ollama") is deprecated — use require("llm.ollama")', vim.log.levels.WARN)
+end)
+return require("llm.ollama")

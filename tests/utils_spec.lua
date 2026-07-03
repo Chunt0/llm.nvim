@@ -1,6 +1,6 @@
 -- Minimal tests for utils.lua
 
-local utils = require("utils")
+local utils = require("llm.utils")
 
 describe("utils.should_include_file", function()
   it("excludes explicit filenames like chat.md regardless of path", function()
@@ -27,13 +27,13 @@ end)
 
 describe("utils.trim_context", function()
   it("returns last N items when exceeding max length", function()
-    local ctx = {1,2,3,4,5}
+    local ctx = { 1, 2, 3, 4, 5 }
     local out = utils.trim_context(ctx, 3)
-    assert.are.same({3,4,5}, out)
+    assert.are.same({ 3, 4, 5 }, out)
   end)
 
   it("returns same table when within limit", function()
-    local ctx = {"a","b"}
+    local ctx = { "a", "b" }
     local out = utils.trim_context(ctx, 5)
     assert.are.same(ctx, out)
   end)

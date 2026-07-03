@@ -1,14 +1,16 @@
 local M = {
   models = {
     openai = "gpt-5.4-mini",
-    anthropic = "claude-haiku-4-5-20251001",
+    anthropic = "claude-haiku-4-5",
     ollama = "qwen3.6:latest",
   },
+  -- Override any of these via require("llm").setup({ constants = { api_endpoints = { ... } } }).
+  -- e.g. a remote Ollama server:  api_endpoints = { ollama = "https://my-server.example.com/api/chat" }
   api_endpoints = {
     anthropic = "https://api.anthropic.com/v1/messages",
     openai = "https://api.openai.com/v1/responses",
     dalle = "https://api.openai.com/v1/images/generations",
-    ollama = "https://ollama.putty-ai.com/api/chat",
+    ollama = "http://localhost:11434/api/chat",
   },
   prompts = {
     system_prompt = "",
@@ -16,12 +18,11 @@ local M = {
     code_instruction = "OUTPUT ONLY RAW CODE — no markdown fences, no backticks, no explanations, no prose outside comments. Keep comments minimal. Remove instruction comments once satisfied. Task:\n",
     helpful_prompt = "You are a helpful assistant. What I have sent are my notes so far. You are very curt, yet helpful. You will always adjust your attitude as I request it.",
   },
+  -- Sampling parameters (temperature/top_p) are intentionally gone: current
+  -- Anthropic models reject them, and prompts steer better anyway.
   vars = {
-    temp = 1,
-    presence_penalty = nil,
-    top_p = nil,
-    frequency_penalty = nil,
-    max_tokens = nil,
+    max_tokens = nil, -- per-provider defaults apply when nil (Anthropic: 16000)
+    reasoning_effort = "low", -- OpenAI Responses API reasoning effort
   },
   excluded_extensions = {
     -- Configuration files
@@ -89,7 +90,9 @@ local M = {
 }
 
 function M.setup(opts)
-  if type(opts) ~= "table" then return end
+  if type(opts) ~= "table" then
+    return
+  end
   local function merge(dst, src)
     for k, v in pairs(src) do
       if type(v) == "table" and type(dst[k]) == "table" then

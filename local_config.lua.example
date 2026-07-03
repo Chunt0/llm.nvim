@@ -1,45 +1,47 @@
 -- local_config.lua.example
 -- Copy this file into your Neovim config as a lazy.nvim plugin spec.
 -- All settings are changed by editing this file — no separate config files needed.
+--
+-- After installing, run  :checkhealth llm  to verify curl / API keys / endpoints.
 
 return {
-	{ -- llm.nvim: streaming LLM completions inside Neovim
+	{ -- llm.nvim: streaming LLM completions + code editing inside Neovim
 		"Chunt0/llm.nvim",
 		dependencies = { "nvim-lua/plenary.nvim" },
 		config = function()
-			local llm = require("llm")
-			local openai = require("openai")
-			local anthropic = require("anthropic")
-			local ollama = require("ollama")
-
 			-- ================================================================
 			-- CONFIGURATION
 			-- All options are optional — anything omitted keeps its default.
 			-- ================================================================
-			require("llm_config").setup({
+			require("llm").setup({
 
-				-- ── Models ───────────────────────────────────────────────────
-				-- Set the model each provider uses.  Omit to keep the default.
+				-- ── Keymaps ──────────────────────────────────────────────────
+				-- true registers the full built-in <leader> set:
+				--   <leader>l… Ollama   <leader>a… Anthropic   <leader>o… OpenAI
+				--   (i invoke, c code, b code+bufs, t chat, a chat+bufs, d diff)
+				--   <leader>z… shared: zz reset, zc/zx/zl context, zm memory, zh health
+				-- Prefer your own maps? Set false and bind manually (see below).
+				default_keymaps = true,
+
 				constants = {
+					-- ── Models ────────────────────────────────────────────────
 					models = {
-						openai    = "gpt-4o-mini",
-						-- options: "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "gpt-5.4-mini"
+						ollama = "qwen3.6:latest",
+						-- Any model pulled on your Ollama instance, e.g. "gemma4:26b".
+						-- List what's available:  curl http://localhost:11434/api/tags
 
-						anthropic = "claude-haiku-4-5-20251001",
-						-- options: "claude-haiku-4-5-20251001", "claude-sonnet-4-5-20250929",
-						--          "claude-sonnet-4-6", "claude-opus-4-6"
+						anthropic = "claude-haiku-4-5",
+						-- options: "claude-haiku-4-5", "claude-sonnet-4-6",
+						--          "claude-sonnet-5", "claude-opus-4-8"
 
-						ollama    = "gemma4:26b",
-						-- Any model available on your Ollama instance.
-						-- Check available models: curl https://ollama.putty-ai.com/api/tags
+						openai = "gpt-5.4-mini",
 					},
 
 					-- ── API Endpoints ─────────────────────────────────────────
-					-- Only change these if you self-host or proxy an API.
+					-- Ollama defaults to your local instance. To use a remote /
+					-- personal server instead, uncomment and point it there:
 					-- api_endpoints = {
-					--   openai    = "https://api.openai.com/v1/responses",
-					--   anthropic = "https://api.anthropic.com/v1/messages",
-					--   ollama    = "https://ollama.putty-ai.com/api/chat",
+					--   ollama = "https://ollama.putty-ai.com/api/chat",
 					-- },
 
 					-- ── Prompts ───────────────────────────────────────────────
@@ -50,51 +52,48 @@ return {
 					--                      (should instruct raw code output only)
 					--   code_instruction → prefix prepended to the user prompt in code modes;
 					--                      your selected text is appended after this
-					--   helpful_prompt   → system prompt used in helpful/note-taking contexts
 					--
 					-- prompts = {
 					--   system_prompt    = "You are a helpful assistant. Be concise.",
 					--   code_prompt      = "You are a code-replacement engine. Output ONLY raw source code — no markdown, no fences, no explanations.",
 					--   code_instruction = "OUTPUT ONLY RAW CODE — no markdown fences, no backticks. Task:\n",
-					--   helpful_prompt   = "You are a helpful assistant. Be curt and direct.",
 					-- },
 
 					-- ── Generation parameters ─────────────────────────────────
 					-- vars = {
-					--   temp             = 0.7,   -- 0.0–2.0, default 1.0
-					--   top_p            = 0.9,   -- 0.0–1.0, default nil (provider default)
-					--   presence_penalty = 0,     -- -2.0–2.0 (OpenAI / Anthropic)
+					--   max_tokens       = 16000, -- response cap (Anthropic default 16000)
+					--   reasoning_effort = "low", -- OpenAI Responses reasoning effort
 					-- },
 				},
 
 				-- ── UI ────────────────────────────────────────────────────────
 				ui = {
-					mode        = "inline",  -- "inline" | "float" | "split"
-					throttle_ms = 20,        -- stream write batching interval in ms
+					mode = "inline", -- "inline" | "float" | "split"
+					throttle_ms = 20, -- stream write batching interval in ms
 				},
 
 				-- ── Conversation memory ───────────────────────────────────────
 				memory = {
-					enabled      = true,
-					max_messages = 20,  -- turns kept per buffer (older turns dropped)
+					enabled = true,
+					max_messages = 20, -- turns kept per buffer (older turns dropped)
 				},
 
 				-- ── Context picker ────────────────────────────────────────────
 				context = {
-					max_buffer_bytes  = 200 * 1024,  -- skip buffers larger than this
-					include_filetypes = nil,          -- allowlist e.g. { "lua", "ts", "py" }
+					max_buffer_bytes = 200 * 1024, -- skip buffers larger than this
+					include_filetypes = nil, -- allowlist e.g. { "lua", "ts", "py" }
 				},
 
 				-- ── Network ───────────────────────────────────────────────────
 				network = {
-					max_time = 120,  -- curl --max-time (seconds)
-					retry    = 2,    -- curl --retry count
+					max_time = 120, -- curl --max-time (seconds)
+					retry = 2, -- curl --retry count
 				},
 
 				-- ── Logging ───────────────────────────────────────────────────
 				logging = {
-					enabled = false,  -- or set LLM_LOG=1 in your environment
-					redact  = true,   -- truncate prompts/responses in log entries
+					enabled = false, -- or set LLM_LOG=1 in your environment
+					redact = true, -- truncate prompts/responses in log entries
 				},
 
 				-- ── Diff accept / reject keymaps ──────────────────────────────
@@ -111,77 +110,25 @@ return {
 			-- Create a file called  llm_memory.md  in your project root.
 			-- Its contents are automatically prepended to the system prompt on
 			-- every request — giving the LLM persistent context about your code.
-			--
-			-- Use :LLMMemoryEdit to open / create this file in a split.
-			-- Use :LLMMemoryPath to see its full path.
-			--
-			-- Example llm_memory.md:
-			--
-			--   # Project: MyApp
-			--   - Language: TypeScript + React
-			--   - State: Zustand   API: REST at /api/v1
-			--   - Key files: src/store.ts, src/api/client.ts
-			--   - Conventions: camelCase vars, PascalCase components
 			-- ================================================================
 
 			-- ================================================================
-			-- CONTEXT PICKER  (:LLMContextAdd / :LLMContextClear / :LLMContextList)
+			-- CUSTOM KEY MAPPINGS
 			--
-			-- Selectively inject open buffers into the LLM prompt.
-			-- Picker uses vim.ui.select (works with or without Telescope).
-			-- Selecting an item toggles [x] / [ ] — it does not close the picker.
-			-- Selected files are shown with [x] prefix.
+			-- With default_keymaps = true the maps below are already set.
+			-- To customise, set default_keymaps = false and bind what you want:
 			--
-			-- Selected buffers are included in ALL modes:
-			--   code mode      → provided as "Code Context:" before the instruction
-			--   invoke mode    → provided as "Code Context:" before the question
-			--   code_chat mode → prepended before all_buffers context
+			-- local ollama    = require("llm.ollama")
+			-- local anthropic = require("llm.anthropic")
+			-- local openai    = require("llm.openai")
+			--
+			-- vim.keymap.set({ "n", "v" }, "<leader>li", ollama.invoke,            { desc = "LLM Ollama: Invoke" })
+			-- vim.keymap.set("v",          "<leader>lc", ollama.code,              { desc = "LLM Ollama: Code (replace selection)" })
+			-- vim.keymap.set("v",          "<leader>lb", ollama.code_all_buf,      { desc = "LLM Ollama: Code (all buffers)" })
+			-- vim.keymap.set({ "n", "v" }, "<leader>lt", ollama.code_chat,         { desc = "LLM Ollama: Code chat" })
+			-- vim.keymap.set({ "n", "v" }, "<leader>la", ollama.code_chat_all_buf, { desc = "LLM Ollama: Code chat (all buffers)" })
+			-- vim.keymap.set("v",          "<leader>ld", ollama.code_diff,         { desc = "LLM Ollama: Code diff" })
 			-- ================================================================
-
-			-- ================================================================
-			-- KEY MAPPINGS — customise prefixes / keys freely
-			-- ================================================================
-
-			-- General LLM controls
-			vim.keymap.set({ "n", "v" }, "<leader>zz", llm.reset_message_buffers, { desc = "LLM: Reset message buffers (OpenAI conversation state)" })
-
-			-- Project memory
-			vim.keymap.set("n", "<leader>zm", "<cmd>LLMMemoryEdit<CR>", { desc = "LLM: Edit project memory (llm_memory.md)" })
-
-			-- Context picker
-			vim.keymap.set({ "n", "v" }, "<leader>zc", "<cmd>LLMContextAdd<CR>",  { desc = "LLM: Toggle buffer in context" })
-			vim.keymap.set("n",          "<leader>zx", "<cmd>LLMContextClear<CR>", { desc = "LLM: Clear all context buffers" })
-			vim.keymap.set("n",          "<leader>zl", "<cmd>LLMContextList<CR>",  { desc = "LLM: List context buffers" })
-
-			-- ── OpenAI ──────────────────────────────────────────────────────
-			--   i  invoke             Ask a question (single turn, no memory)
-			--   c  code               Replace visual selection with generated code
-			--   b  code_all_buf       Code — all open buffers as context
-			--   t  code_chat          Chat with per-buffer conversation memory
-			--   a  code_chat_all_buf  Chat + all open buffers as context
-			--   d  code_diff          Propose a change in a diff split; accept or reject
-			vim.keymap.set({ "n", "v" }, "<leader>oi", openai.invoke,            { desc = "LLM OpenAI: Invoke" })
-			vim.keymap.set({ "n", "v" }, "<leader>oc", openai.code,              { desc = "LLM OpenAI: Code (replace selection)" })
-			vim.keymap.set({ "n", "v" }, "<leader>ob", openai.code_all_buf,      { desc = "LLM OpenAI: Code (all buffers)" })
-			vim.keymap.set({ "n", "v" }, "<leader>ot", openai.code_chat,         { desc = "LLM OpenAI: Code chat" })
-			vim.keymap.set({ "n", "v" }, "<leader>oa", openai.code_chat_all_buf, { desc = "LLM OpenAI: Code chat (all buffers)" })
-			vim.keymap.set("v",          "<leader>od", openai.code_diff,         { desc = "LLM OpenAI: Code diff" })
-
-			-- ── Anthropic ────────────────────────────────────────────────────
-			vim.keymap.set({ "n", "v" }, "<leader>ai", anthropic.invoke,            { desc = "LLM Anthropic: Invoke" })
-			vim.keymap.set({ "n", "v" }, "<leader>ac", anthropic.code,              { desc = "LLM Anthropic: Code (replace selection)" })
-			vim.keymap.set({ "n", "v" }, "<leader>ab", anthropic.code_all_buf,      { desc = "LLM Anthropic: Code (all buffers)" })
-			vim.keymap.set({ "n", "v" }, "<leader>at", anthropic.code_chat,         { desc = "LLM Anthropic: Code chat" })
-			vim.keymap.set({ "n", "v" }, "<leader>aa", anthropic.code_chat_all_buf, { desc = "LLM Anthropic: Code chat (all buffers)" })
-			vim.keymap.set("v",          "<leader>ad", anthropic.code_diff,         { desc = "LLM Anthropic: Code diff" })
-
-			-- ── Ollama (self-hosted at https://ollama.putty-ai.com) ──────────
-			vim.keymap.set({ "n", "v" }, "<leader>li", ollama.invoke,            { desc = "LLM Ollama: Invoke" })
-			vim.keymap.set({ "n", "v" }, "<leader>lc", ollama.code,              { desc = "LLM Ollama: Code (replace selection)" })
-			vim.keymap.set({ "n", "v" }, "<leader>lb", ollama.code_all_buf,      { desc = "LLM Ollama: Code (all buffers)" })
-			vim.keymap.set({ "n", "v" }, "<leader>lt", ollama.code_chat,         { desc = "LLM Ollama: Code chat" })
-			vim.keymap.set({ "n", "v" }, "<leader>la", ollama.code_chat_all_buf, { desc = "LLM Ollama: Code chat (all buffers)" })
-			vim.keymap.set("v",          "<leader>ld", ollama.code_diff,         { desc = "LLM Ollama: Code diff" })
 		end,
 	},
 }

@@ -1,4 +1,4 @@
-local Config = require("llm_config")
+local Config = require("llm.config")
 
 local M = {}
 local store = {}
@@ -19,7 +19,9 @@ function M.clear(bufnr)
 end
 
 function M.append(bufnr, role, content)
-  if not role or not content then return end
+  if not role or not content then
+    return
+  end
   bufnr = get_bufnr(bufnr)
   store[bufnr] = store[bufnr] or {}
   table.insert(store[bufnr], { role = role, content = content })
@@ -46,9 +48,21 @@ function M.build_messages(bufnr, system_prompt, prompt)
     table.insert(msgs, { role = "system", content = system_prompt })
   end
   for _, m in ipairs(M.messages(bufnr)) do
-    table.insert(msgs, m)
+    local prev = msgs[#msgs]
+    if prev and prev.role ~= "system" and prev.role == m.role then
+      -- Merge consecutive same-role turns: Anthropic rejects non-alternating
+      -- roles, and one bad append would otherwise wedge the whole chat.
+      prev.content = prev.content .. "\n\n" .. m.content
+    else
+      table.insert(msgs, { role = m.role, content = m.content })
+    end
   end
-  table.insert(msgs, { role = "user", content = prompt })
+  local last = msgs[#msgs]
+  if last and last.role == "user" then
+    last.content = last.content .. "\n\n" .. prompt
+  else
+    table.insert(msgs, { role = "user", content = prompt })
+  end
   return msgs
 end
 
