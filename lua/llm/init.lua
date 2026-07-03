@@ -27,29 +27,77 @@ function M.set_debug(on)
   dbg("DEBUG=" .. tostring(DEBUG))
 end
 
--- ===== Stream anchor =====
+-- ===== Per-invocation stream context (fixes P13) =====
+-- All mutable stream state (extmark anchor, UTF-8 carry, pending flush text,
+-- response accumulator, final assistant message) lives on a context object
+-- created fresh per invocation, so a cancelled or superseded stream's late
+-- callbacks can never write into the next stream's buffer or transcript.
 local NS = vim.api.nvim_create_namespace("LLMStream")
-local stream_anchor = nil
-local function start_anchor(bufnr, winid)
+
+local function split_complete_utf8(s)
+  if s == "" then
+    return "", ""
+  end
+  local len, i = #s, #s
+  while i > 0 do
+    local b = s:byte(i)
+    if b < 0x80 or b >= 0xC0 then
+      break
+    end
+    i = i - 1
+  end
+  if i == 0 then
+    return "", s
+  end
+  local lead = s:byte(i)
+  -- ASCII needs no continuation bytes: without the < 0x80 case the final
+  -- character of every chunk was held in the carry, and chat history built at
+  -- message_stop (before the exit flush) stored replies missing their last
+  -- character.
+  local need = (lead < 0x80 and 0) or (lead < 0xE0 and 1) or (lead < 0xF0 and 2) or (lead < 0xF8 and 3) or 0
+  local have = len - i
+  if have < need then
+    return s:sub(1, i - 1), s:sub(i)
+  else
+    return s, ""
+  end
+end
+
+local StreamCtx = {}
+StreamCtx.__index = StreamCtx
+
+local function new_stream_ctx()
+  return setmetatable({
+    anchor = nil, -- { bufnr, id }
+    carry = "", -- incomplete UTF-8 sequence held between chunks
+    pending = "", -- text batched for the next throttled flush
+    accum = "", -- whole response so far
+    flush_scheduled = false,
+    assistant_message = nil,
+  }, StreamCtx)
+end
+
+function StreamCtx:start_anchor(bufnr, winid)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   local win = winid or vim.api.nvim_get_current_win()
   local row, col = unpack(vim.api.nvim_win_get_cursor(win))
   local id = vim.api.nvim_buf_set_extmark(bufnr, NS, row - 1, col, { right_gravity = false })
-  stream_anchor = { bufnr = bufnr, id = id }
+  self.anchor = { bufnr = bufnr, id = id }
   dbg(("anchor start buf=%d row=%d col=%d"):format(bufnr, row - 1, col))
 end
-local function append_at_anchor(txt)
+
+function StreamCtx:append_at_anchor(txt)
   if not txt or txt == "" then
     return
   end
   txt = txt:gsub("[\r\b]", "")
-  local sa = stream_anchor and { bufnr = stream_anchor.bufnr, id = stream_anchor.id } or nil
+  local sa = self.anchor and { bufnr = self.anchor.bufnr, id = self.anchor.id } or nil
   vim.schedule(function()
     if not sa or not sa.bufnr or not sa.id or not vim.api.nvim_buf_is_loaded(sa.bufnr) then
       local bufnr = vim.api.nvim_get_current_buf()
       local row, col = unpack(vim.api.nvim_win_get_cursor(0))
       local id = vim.api.nvim_buf_set_extmark(bufnr, NS, row - 1, col, { right_gravity = false })
-      stream_anchor = { bufnr = bufnr, id = id }
+      self.anchor = { bufnr = bufnr, id = id }
       sa = { bufnr = bufnr, id = id }
       dbg("anchor recreated")
     end
@@ -72,72 +120,71 @@ local function append_at_anchor(txt)
     pcall(vim.api.nvim_buf_set_extmark, sa.bufnr, NS, new_row, new_col, { id = sa.id, right_gravity = false })
   end)
 end
-local function end_anchor()
-  stream_anchor = nil
+
+function StreamCtx:end_anchor()
+  self.anchor = nil
   dbg("anchor cleared")
 end
 
--- ===== UTF-8 safe write =====
-local utf8_carry = ""
-local function split_complete_utf8(s)
-  if s == "" then
-    return "", ""
+function StreamCtx:flush()
+  if self.pending ~= "" then
+    self:append_at_anchor(self.pending)
+    self.pending = ""
   end
-  local len, i = #s, #s
-  while i > 0 do
-    local b = s:byte(i)
-    if b < 0x80 or b >= 0xC0 then
-      break
-    end
-    i = i - 1
-  end
-  if i == 0 then
-    return "", s
-  end
-  local lead = s:byte(i)
-  local need = (lead < 0xE0 and 1) or (lead < 0xF0 and 2) or (lead < 0xF8 and 3) or 0
-  local have = len - i
-  if have < need then
-    return s:sub(1, i - 1), s:sub(i)
-  else
-    return s, ""
-  end
-end
-local pending_text = ""
-local response_accum = ""
-local flush_scheduled = false
-local function flush_pending()
-  if pending_text ~= "" then
-    append_at_anchor(pending_text)
-    pending_text = ""
-  end
-  flush_scheduled = false
+  self.flush_scheduled = false
 end
 
-local function write_safely(chunk)
+function StreamCtx:write(chunk)
   if not chunk or chunk == "" then
     return
   end
-  if utf8_carry ~= "" then
-    chunk = utf8_carry .. chunk
-    utf8_carry = ""
+  if self.carry ~= "" then
+    chunk = self.carry .. chunk
+    self.carry = ""
   end
   chunk = chunk:gsub("\r\n", "\n"):gsub("[\r\b]", "")
   local complete, tail = split_complete_utf8(chunk)
-  utf8_carry = tail
+  self.carry = tail
   if complete ~= "" then
-    response_accum = response_accum .. complete
-    pending_text = pending_text .. complete
-    if not flush_scheduled then
-      flush_scheduled = true
+    self.accum = self.accum .. complete
+    self.pending = self.pending .. complete
+    if not self.flush_scheduled then
+      self.flush_scheduled = true
       local t = (Config.ui and Config.ui.throttle_ms) or 20
-      vim.defer_fn(flush_pending, t)
+      vim.defer_fn(function()
+        self:flush()
+      end, t)
     end
   end
 end
 
+--- Flush the carry (end of stream) then any pending text.
+function StreamCtx:finalize()
+  if self.carry ~= "" then
+    local tail = self.carry
+    self.carry = ""
+    self:write(tail)
+  end
+  self:flush()
+end
+
+-- Exported so integrations/tests can create isolated stream contexts and pass
+-- them via the parser state ({ buf = "", ctx = ... }).
+M.new_stream_ctx = new_stream_ctx
+
+-- Handlers called without a parser state (bare/legacy usage, tests) share one
+-- module-level context — the old behavior. Handlers wired through the invoke
+-- functions below always carry a fresh per-invocation context instead.
+local fallback_ctx = new_stream_ctx()
+local function ctx_of(state)
+  if type(state) == "table" then
+    state.ctx = state.ctx or fallback_ctx
+    return state.ctx
+  end
+  return fallback_ctx
+end
+
 -- ===== State =====
-local assistant_message = nil
 local provider_state = {
   OPENAI = { response_id = "" },
 }
@@ -260,6 +307,7 @@ end
 
 function M.handle_anthropic_spec_data(chunk, state)
   state = state or { buf = "" }
+  local ctx = ctx_of(state)
   Stream.parse_sse_chunk(state, chunk, {
     -- The event name arrives as the second argument, carried in the parser
     -- state, so event:/data: pairs split across curl chunks stay paired.
@@ -276,7 +324,7 @@ function M.handle_anthropic_spec_data(chunk, state)
       if (event_name and event_name:match("content_block")) or obj.delta then
         local text = (obj.delta and obj.delta.text) or (obj.delta and obj.delta[1] and obj.delta[1].text)
         if text and #text > 0 then
-          write_safely(text)
+          ctx:write(text)
         end
       end
       if obj.type == "message_delta" and obj.delta and obj.delta.stop_reason then
@@ -288,7 +336,7 @@ function M.handle_anthropic_spec_data(chunk, state)
         end
       end
       if obj.type == "message_stop" or event_name == "message_stop" then
-        assistant_message = { role = "assistant", content = response_accum }
+        ctx.assistant_message = { role = "assistant", content = ctx.accum }
       end
     end,
   })
@@ -327,6 +375,7 @@ end
 
 function M.handle_ollama_spec_data(chunk, state)
   state = state or { buf = "" }
+  local ctx = ctx_of(state)
   Stream.parse_jsonl_chunk(state, chunk, {
     on_json = function(obj)
       if obj.error then
@@ -334,10 +383,10 @@ function M.handle_ollama_spec_data(chunk, state)
         return
       end
       if obj.message and obj.message.content then
-        write_safely(tostring(obj.message.content))
+        ctx:write(tostring(obj.message.content))
       end
       if obj.done and obj.done ~= vim.NIL then
-        assistant_message = { role = "assistant", content = response_accum }
+        ctx.assistant_message = { role = "assistant", content = ctx.accum }
       end
     end,
   })
@@ -389,10 +438,11 @@ function M.make_openai_spec_curl_args(opts, prompt, system_prompt)
   return { args = args, config = table.concat(config_lines, "\n") }
 end
 
-function M.handle_openai_spec_data(line)
+function M.handle_openai_spec_data(line, state)
   if not line then
     return
   end
+  local ctx = ctx_of(state)
 
   if line:match("^:%s?.*") or line:match("^event:%s*[%w%._-]+%s*$") then
     return
@@ -420,13 +470,13 @@ function M.handle_openai_spec_data(line)
   local t = tostring(json.type or "")
 
   if (t == "response.output_text.delta" or t:match("%.output_text%.delta$")) and json.delta then
-    write_safely(json.delta)
+    ctx:write(json.delta)
     return
   end
 
   if t == "response.output_text.done" or t:match("%.output_text%.done$") then
     if json.text then
-      assistant_message = { role = "assistant", content = json.text }
+      ctx.assistant_message = { role = "assistant", content = json.text }
       dbg("Assistant Message: " .. json.text)
     end
     return
@@ -572,9 +622,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     opts.messages = Memory.build_messages(mem_bufnr, system_prompt, prompt)
   end
 
-  response_accum = ""
-  utf8_carry = ""
-  pending_text = ""
+  local ctx = new_stream_ctx()
   local req = make_curl_args_fn(opts, prompt, system_prompt)
   local args, kconfig
   if type(req) == "table" and req.args then
@@ -594,7 +642,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     active_job = nil
   end
 
-  start_anchor(target_bufnr, target_win)
+  ctx:start_anchor(target_bufnr, target_win)
 
   local function normalize_chunk(out)
     if type(out) == "table" then
@@ -603,7 +651,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
     return (out or ""):gsub("\r\n", "\n")
   end
 
-  local parser_state = { buf = "" }
+  local parser_state = { buf = "", ctx = ctx }
   local error_notified = false
   local stderr_buf = {}
   local stdout_buf = {} -- collects raw lines for error reporting
@@ -635,15 +683,10 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
       provider_state.OPENAI = { response_id = "" }
     end
 
-    if utf8_carry ~= "" then
-      write_safely(utf8_carry)
-      utf8_carry = ""
-    end
-
-    -- Flush any pending text now so its vim.schedule write is queued first.
-    -- Then wrap the separator insertion in another vim.schedule so it runs
-    -- after the text write (Neovim processes scheduled callbacks FIFO).
-    flush_pending()
+    -- Flush the carry and any pending text now so their vim.schedule writes
+    -- are queued first. Then wrap the separator insertion in another
+    -- vim.schedule so it runs after the text write (scheduled FIFO).
+    ctx:finalize()
 
     vim.schedule(function()
       local bufnr = target_bufnr
@@ -653,20 +696,20 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
       vim.api.nvim_buf_set_lines(bufnr, insert_at, insert_at, false, { "", user_line, "" })
       pcall(vim.api.nvim_win_set_cursor, target_win, { insert_at + 3, 0 })
 
-      if not assistant_message and response_accum ~= "" then
-        assistant_message = { role = "assistant", content = response_accum }
+      if not ctx.assistant_message and ctx.accum ~= "" then
+        ctx.assistant_message = { role = "assistant", content = ctx.accum }
       end
       local succeeded = (code == 0 or code == nil)
       if
         succeeded
         and use_memory
-        and assistant_message
-        and assistant_message.content
-        and assistant_message.content ~= ""
+        and ctx.assistant_message
+        and ctx.assistant_message.content
+        and ctx.assistant_message.content ~= ""
       then
         -- Store the turn as a user/assistant pair so roles always alternate.
         Memory.append(mem_bufnr, "user", prompt)
-        Memory.append(mem_bufnr, "assistant", assistant_message.content)
+        Memory.append(mem_bufnr, "assistant", ctx.assistant_message.content)
       end
 
       local user_message = { role = "user", content = prompt }
@@ -676,12 +719,11 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
         framework = framework,
         model = model,
         user = user_message,
-        assistant = assistant_message,
+        assistant = ctx.assistant_message,
       }
       pcall(Log.log, log_entry)
       active_job = nil
-      assistant_message = nil
-      end_anchor()
+      ctx:end_anchor()
       remove_esc_keymap()
       if not succeeded then
         local body = table.concat(stdout_buf, " ")
@@ -726,7 +768,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_spe
         active_job:shutdown()
         vim.notify("LLM streaming cancelled", vim.log.levels.INFO)
         active_job = nil
-        end_anchor()
+        ctx:end_anchor()
         remove_esc_keymap()
         dbg("cancelled by user")
       end
@@ -820,10 +862,8 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
   local scratch_bufnr = target.bufnr
   local scratch_win = target.win
 
-  response_accum = ""
-  utf8_carry = ""
-  pending_text = ""
-  start_anchor(scratch_bufnr, scratch_win)
+  local ctx = new_stream_ctx()
+  ctx:start_anchor(scratch_bufnr, scratch_win)
 
   local req = make_curl_args_fn(opts, prompt, system_prompt)
   local args, kconfig
@@ -850,7 +890,7 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
     return (out or ""):gsub("\r\n", "\n")
   end
 
-  local parser_state = { buf = "" }
+  local parser_state = { buf = "", ctx = ctx }
   local error_notified = false
   local stderr_buf = {}
   local stdout_buf = {}
@@ -879,11 +919,7 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
       provider_state.OPENAI = { response_id = "" }
     end
 
-    if utf8_carry ~= "" then
-      write_safely(utf8_carry)
-      utf8_carry = ""
-    end
-    flush_pending()
+    ctx:finalize()
 
     vim.schedule(function()
       if code ~= 0 then
@@ -898,7 +934,7 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
         remove_esc_keymap()
         pcall(vim.api.nvim_win_close, scratch_win, true)
         active_job = nil
-        end_anchor()
+        ctx:end_anchor()
         return
       end
 
@@ -927,11 +963,10 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
           framework = framework,
           model = model,
           user = { role = "user", content = prompt },
-          assistant = { role = "assistant", content = response_accum },
+          assistant = { role = "assistant", content = ctx.accum },
         })
         active_job = nil
-        assistant_message = nil
-        end_anchor()
+        ctx:end_anchor()
         return
       end
 
@@ -1006,11 +1041,10 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
         framework = framework,
         model = model,
         user = { role = "user", content = prompt },
-        assistant = { role = "assistant", content = response_accum },
+        assistant = { role = "assistant", content = ctx.accum },
       })
       active_job = nil
-      assistant_message = nil
-      end_anchor()
+      ctx:end_anchor()
     end)
   end)
 
@@ -1048,7 +1082,7 @@ function M.invoke_llm_and_stream_into_diff(opts, make_curl_args_fn, handle_spec_
         active_job = nil
         remove_esc_keymap()
         pcall(vim.api.nvim_win_close, scratch_win, true)
-        end_anchor()
+        ctx:end_anchor()
       end
     end,
   })
@@ -1080,7 +1114,7 @@ end
 
 function M.reset_message_buffers()
   provider_state.OPENAI = { response_id = "" }
-  assistant_message = nil
+  fallback_ctx = new_stream_ctx()
   Memory.clear()
   vim.notify("LLM session cleared", vim.log.levels.INFO)
 end

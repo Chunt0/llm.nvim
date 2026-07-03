@@ -241,7 +241,9 @@ call is shown as a card:
 
 **It's a conversation**: when a turn finishes, an input area opens at the
 bottom of the panel — type a follow-up and press `<CR>` in normal mode to send
-it with the full conversation context. Press `Esc` in the panel (or
+it with the full conversation context. Mention a file with `@path/to/file` and
+its content is attached to the prompt automatically (same root-confinement and
+secret-file rules as the tools). Press `Esc` in the panel (or
 `:LLMCancel`) to stop a running turn. Each request/tool loop is capped at
 `agent.max_turns` (default 25) rounds.
 

@@ -222,6 +222,45 @@ function M.default_system(root, tool_names)
   return table.concat(parts, "\n")
 end
 
+-- ===== @file mentions =========================================================
+
+--- Expand @path mentions: each mentioned project file's content is attached
+--- below the prompt so the model doesn't have to read_file it first. Paths go
+--- through the same confinement and secret-file rules as the tools; anything
+--- refused or missing is simply left as literal text.
+--- Returns the expanded prompt and the list of attached relative paths.
+function M.expand_mentions(prompt, root, opts)
+  local max_bytes = (opts and opts.max_bytes) or (Config.tools and Config.tools.max_result_bytes) or 60 * 1024
+  local attachments, seen = {}, {}
+  for token in prompt:gmatch("@([%w%._%-/]+)") do
+    token = token:gsub("%.+$", "") -- "@foo.lua." at sentence end
+    if token ~= "" and not seen[token] then
+      seen[token] = true
+      local abs = Fs.confine(token, root, opts)
+      if abs and not Fs.is_denied(abs) then
+        local lines = Fs.read_lines(abs)
+        if lines then
+          local content = table.concat(lines, "\n")
+          if #content > max_bytes then
+            content = content:sub(1, max_bytes) .. "\n[truncated — use read_file with start_line for the rest]"
+          end
+          table.insert(attachments, { path = token, content = content })
+        end
+      end
+    end
+  end
+  if #attachments == 0 then
+    return prompt, {}
+  end
+  local parts = { prompt, "", "# Attached files (@mentions):" }
+  local names = {}
+  for _, a in ipairs(attachments) do
+    table.insert(parts, "## " .. a.path .. "\n```\n" .. a.content .. "\n```")
+    table.insert(names, a.path)
+  end
+  return table.concat(parts, "\n"), names
+end
+
 -- ===== The loop ===============================================================
 
 local function noop() end
@@ -646,11 +685,15 @@ function M.open_session(opts)
 
   local function begin_run(prompt)
     ctl.running = true
+    local expanded, attached = M.expand_mentions(prompt, root)
+    if #attached > 0 then
+      append_text(bufnr, "\n*(attached: " .. table.concat(attached, ", ") .. ")*")
+    end
     append_text(bufnr, "\n\n## Assistant\n")
     ctl.handle = M.run({
       provider = provider,
       model = model,
-      prompt = prompt,
+      prompt = expanded,
       root = root,
       panel_bufnr = bufnr,
       session = ctl.session,

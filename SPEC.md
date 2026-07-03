@@ -48,10 +48,15 @@ file other than the current selection. Everything below builds toward that.
 
 ## 2. Problems found in the current code
 
-> **Status update (2026-07-03):** every bug below except P13 is **fixed** as part of
-> Milestone 1, each with a regression test where unit-testable. P13 (single global
-> stream state) is deliberately deferred to M2, where the session model removes it
-> structurally. P7 was fixed via the `lua/llm/` namespace move with compat shims.
+> **Status update (2026-07-03):** every bug below is **fixed**, each with a
+> regression test where unit-testable. P13 was closed later the same day: all
+> stream state (anchor, UTF-8 carry, pending text, accumulator, assistant
+> message) now lives on a per-invocation `StreamCtx`, so a cancelled stream's
+> late callbacks cannot write into the next stream (`tests/stream_ctx_spec.lua`).
+> Fixing it surfaced one more latent bug: the UTF-8 splitter treated a trailing
+> ASCII byte as a multibyte lead, so chat history recorded at `message_stop`
+> was missing the final character of every reply — also fixed with a test.
+> P7 was fixed via the `lua/llm/` namespace move with compat shims.
 
 ### 2.1 Bugs / correctness
 
@@ -427,10 +432,11 @@ Ordered so the plugin is never broken in between; each milestone is shippable.
    diff engine with `auto_apply`; `:checkhealth llm`; opt-in default keymaps
    (`default_keymaps = true`); LuaJIT added to CI; tests ported (159 passing) and
    luacheck/stylua clean.
-2. **M2 — Provider contract** *(partially landed 2026-07-03)*: ✅ normalized `Sink`
-   stream events (`stream.anthropic_events` / `stream.ollama_events`, chunk-boundary
-   tested), ✅ fake-transport injection point (`agent.run{transport=…}`); ⬜ session
-   model for chat modes, ⬜ mini.test harness + integration tests, ⬜ mock e2e server.
+2. **M2 — Provider contract** *(mostly landed 2026-07-03)*: ✅ normalized `Sink`
+   stream events (`stream.anthropic_events` / `ollama_events` / `openai_events`,
+   chunk-boundary tested), ✅ fake-transport injection point (`agent.run{transport=…}`),
+   ✅ per-invocation stream state (P13 — `StreamCtx` replaces every module-global);
+   ⬜ mini.test harness + integration tests, ⬜ mock e2e server.
 3. ✅ **M3 — Read-only agent** *(landed 2026-07-03)*: tool registry with per-provider
    schemas + policy (`lua/llm/tools/`), `read_file`/`list_files`/`grep` with path
    confinement enforced in `lua/llm/util/fs.lua` (traversal/absolute/symlink escapes +
@@ -458,7 +464,9 @@ Ordered so the plugin is never broken in between; each milestone is shippable.
    transcript and continuing; ✅ OpenAI Responses API tool support (flat function
    schemas, transcript replay via `function_call`/`function_call_output` items,
    `store=false` — no `previous_response_id` fragility in agent mode).
-   Remaining: tool-card folds, `@file` mentions, README repositioning of the
+   `@file` mentions landed too: mentioned project files are attached to the
+   prompt (confinement + secret rules apply; oversized attachments truncate with
+   a read_file pointer). Remaining: tool-card folds, README repositioning of the
    panel as the default chat, delete compat shims next release.
 
 ---
